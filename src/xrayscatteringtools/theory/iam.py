@@ -1,4 +1,4 @@
-from xrayscatteringtools.utils import read_xyz
+from xrayscatteringtools.io import read_xyz
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 from mendeleev import element

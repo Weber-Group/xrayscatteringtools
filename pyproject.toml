@@ -17,6 +17,10 @@ dependencies = [
     "scipy>=1.11",
     "mendeleev>=0.15",
     "pathlib"
+    "IPython"
+    "matplotlib"
+    "tqdm"
+    "h5py"
 ]
 
 [project.optional-dependencies]
