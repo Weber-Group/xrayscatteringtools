@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xrayscatteringtools"
+version = "0.1.0"
+description = "A library for gas phase analysis at the CXI endstation"
+authors = [
+    { name = "David Romano", email = "david_j_romano@brown.edu" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "mendeleev>=0.15",
+    "pathlib"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "mypy>=1.9",
+    "ruff>=0.3"
+]
+
+[project.urls]
+Homepage = "https://github.com/Weber-Group/xrayscatteringtools"
+Issues = "https://github.com/Weber-Group/xrayscatteringtools/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
