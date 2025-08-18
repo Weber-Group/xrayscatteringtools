@@ -159,7 +159,32 @@ def runNumToString(num):
     return numstr
 
 def read_xyz(filename):
-    """Read an XYZ file and return atoms and coordinates."""
+    """
+    Read a molecular structure from an XYZ file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the XYZ file to be read.
+
+    Returns
+    -------
+    num_atoms : int
+        Number of atoms in the XYZ file.
+    comment : str
+        Comment line from the XYZ file (usually contains metadata or description).
+    atoms : list of str
+        List of atomic symbols (e.g., 'C', 'H', 'O') for each atom.
+    coords : list of tuple of float
+        Cartesian coordinates of each atom as (x, y, z) in the same units as the file.
+
+    Notes
+    -----
+    The XYZ file format is expected to have:
+    1. First line: number of atoms.
+    2. Second line: comment or description.
+    3. Following lines: atomic symbol and x, y, z coordinates for each atom.
+    """
     with open(filename, 'r') as f:
         lines = f.readlines()
     

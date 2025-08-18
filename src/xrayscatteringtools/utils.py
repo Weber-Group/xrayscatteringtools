@@ -3,7 +3,16 @@ from IPython import get_ipython
 import numpy as np
 
 def enable_underscore_cleanup():
-    """Registers a post-cell hook to delete user-defined _ variables after each cell."""
+    """
+    Register a Jupyter Notebook post-cell hook to automatically delete user-defined 
+    single-underscore variables after each cell execution.
+
+    Notes
+    -----
+    This helps keep the notebook namespace clean by removing temporary variables
+    that start with a single underscore (`_`) but are not standard IPython variables 
+    (like `_i`, `_oh`, etc.) or Python "dunder" variables.
+    """
     ipython = get_ipython()
     user_ns = ipython.user_ns  # This gives you access to the Jupyter notebook namespace
 
@@ -22,19 +31,89 @@ def enable_underscore_cleanup():
     ipython.events.register('post_run_cell', clean_user_underscore_vars)
 
 def keV2Angstroms(keV):
-    """Convert energy in keV to wavelength in Angstroms."""
+    """
+    Convert photon energy from keV to wavelength in Angstroms.
+
+    Parameters
+    ----------
+    keV : float
+        Photon energy in kilo-electron volts.
+
+    Returns
+    -------
+    float
+        Corresponding wavelength in Angstroms.
+
+    Notes
+    -----
+    Uses the relation λ(Å) = 12.39841984 / E(keV).
+    """
     return 12.39841984/keV
 
 def Angstroms2keV(angstroms):
-    """Convert wavelength in Angstroms to energy in keV."""
+    """
+    Convert wavelength in Angstroms to photon energy in keV.
+
+    Parameters
+    ----------
+    angstroms : float
+        Wavelength in Angstroms.
+
+    Returns
+    -------
+    float
+        Photon energy in kilo-electron volts.
+
+    Notes
+    -----
+    Uses the relation E(keV) = 12.39841984 / λ(Å).
+    """
     return 12.39841984/angstroms
 
 def q2theta(q, keV):
-    """Convert momentum transfer (q) to scattering angle (theta) in radians."""
+    """
+    Convert momentum transfer q to scattering angle theta in radians.
+
+    Parameters
+    ----------
+    q : float or array-like
+        Momentum transfer in inverse Angstroms (Å⁻¹).
+    keV : float
+        Photon energy in keV.
+
+    Returns
+    -------
+    float or array-like
+        Scattering angle θ in radians.
+
+    Notes
+    -----
+    Uses the relation θ = 2 * arcsin(q * λ / (4π)), where λ is the photon
+    wavelength corresponding to the given energy.
+    """
     return 2 * np.arcsin(q * keV2Angstroms(keV) / (4 * np.pi))
 
 def theta2q(theta, keV):
-    """Convert scattering angle (theta) in radians to momentum transfer (q)."""
+    """
+    Convert scattering angle theta in radians to momentum transfer q.
+
+    Parameters
+    ----------
+    theta : float or array-like
+        Scattering angle in radians.
+    keV : float
+        Photon energy in keV.
+
+    Returns
+    -------
+    float or array-like
+        Momentum transfer q in inverse Angstroms (Å⁻¹).
+
+    Notes
+    -----
+    Uses the relation q = (4π / λ) * sin(θ / 2), where λ is the photon wavelength
+    corresponding to the given energy.
+    """
     return 4 * np.pi / keV2Angstroms(keV) * np.sin(theta / 2)
 
 ELEMENT_NUMBERS = {

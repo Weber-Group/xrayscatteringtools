@@ -3,7 +3,7 @@ from xrayscatteringtools.utils import q2theta
 import numpy as np
 
 def correction_factor(
-    qbins, 
+    q_arr, 
     keV, 
     L=2.4e-3, 
     tSi=318.5e-6, 
@@ -58,20 +58,20 @@ def correction_factor(
                            Al_correction * Be_correction * cell_correction
     """
     return (
-        Si_correction(qbins, keV, tSi) *
-        KaptonHN_correction(qbins, keV, tK) *
-        Al_correction(qbins, keV, tAl) *
-        Be_correction(qbins, keV, tBe, rBe, L) *
-        cell_correction(qbins, keV, tP, rP, L)
+        Si_correction(q_arr, keV, tSi) *
+        KaptonHN_correction(q_arr, keV, tK) *
+        Al_correction(q_arr, keV, tAl) *
+        Be_correction(q_arr, keV, tBe, rBe, L) *
+        cell_correction(q_arr, keV, tP, rP, L)
     )
 
-def Si_correction(qbins, keV, tSi=318.5e-6):
+def Si_correction(q_arr, keV, tSi=318.5e-6):
     """
     Calculate the Silicon correction factor.
 
     Parameters
     ----------
-    qbins : array-like
+    q_arr : array-like
         Array of momentum transfer (q) values.
     keV : float
         Photon energy in keV.
@@ -90,17 +90,17 @@ def Si_correction(qbins, keV, tSi=318.5e-6):
     where λ_Si is the X-ray attenuation length for silicon at the given energy.
     """
     Silen = Si_attenuation_length(keV)
-    thetas = q2theta(qbins, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
+    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
     nSi = (1 - np.exp(- tSi / (Silen * np.cos(thetas)))) / (1 - np.exp(- tSi / Silen))
     return nSi
 
-def KaptonHN_correction(qbins, keV, tK=8e-6):
+def KaptonHN_correction(q_arr, keV, tK=8e-6):
     """
     Calculate the Kapton (HN) correction factor.
 
     Parameters
     ----------
-    qbins : array-like
+    q_arr : array-like
         Array of momentum transfer (q) values.
     keV : float
         Photon energy in keV.
@@ -119,17 +119,17 @@ def KaptonHN_correction(qbins, keV, tK=8e-6):
     where λ_K is the X-ray attenuation length for Kapton at the given energy.
     """
     Klen = KaptonHN_attenuation_length(keV)
-    thetas = q2theta(qbins, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
+    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
     nK = np.exp(- tK / (Klen * np.cos(thetas))) / np.exp(- tK / Klen)
     return nK
 
-def Al_correction(qbins, keV, tAl=4.5e-6):
+def Al_correction(q_arr, keV, tAl=4.5e-6):
     """
     Calculate the Aluminum correction factor.
 
     Parameters
     ----------
-    qbins : array-like
+    q_arr : array-like
         Array of momentum transfer (q) values.
     keV : float
         Photon energy in keV.
@@ -148,18 +148,18 @@ def Al_correction(qbins, keV, tAl=4.5e-6):
     where λ_Al is the X-ray attenuation length for Aluminum at the given energy.
     """
     Allen = Al_attenuation_length(keV)
-    thetas = q2theta(qbins, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
+    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
     nAl = np.exp(- tAl / (Allen * np.cos(thetas))) / np.exp(- tAl / Allen)
     return nAl
 
 
-def Be_correction(qbins, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
+def Be_correction(q_arr, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     """
     Calculate the Beryllium correction factor considering window geometry.
 
     Parameters
     ----------
-    qbins : array-like
+    q_arr : array-like
         Array of momentum transfer (q) values.
     keV : float
         Photon energy in keV.
@@ -181,8 +181,8 @@ def Be_correction(qbins, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     scattering angle.
     """
     Belen = Be_attenuation_length(keV)
-    thetas = q2theta(qbins, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
-    xBe = np.zeros_like(qbins)
+    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
+    xBe = np.zeros_like(q_arr)
     for i, theta in enumerate(thetas):
         if rBe / np.tan(theta) <= L:
             xBe[i] = rBe / np.tan(theta)
@@ -191,13 +191,13 @@ def Be_correction(qbins, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     nBe = xBe / L + (L - xBe) / L * np.exp(-tBe / (Belen * np.cos(thetas)))
     return nBe
 
-def cell_correction(qbins, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
+def cell_correction(q_arr, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
     """
     Calculate the gas cell geometry correction factor.
 
     Parameters
     ----------
-    qbins : array-like
+    q_arr : array-like
         Array of momentum transfer (q) values.
     keV : float
         Photon energy in keV.
@@ -217,9 +217,9 @@ def cell_correction(qbins, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
     -----
     Accounts for the angle-dependent path length and geometry of the gas cell.
     """
-    thetas = q2theta(qbins, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
+    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
     xmax = tP - rP/np.tan(thetas)
-    nCell = np.zeros_like(qbins)
+    nCell = np.zeros_like(q_arr)
     for i, theta in enumerate(thetas):
         if np.tan(theta) >= rP/tP:
             nCell[i] = 1 + 1/L * rP / np.tan(theta)

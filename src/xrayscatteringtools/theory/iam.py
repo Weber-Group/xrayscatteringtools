@@ -8,7 +8,26 @@ base_path = pathlib.Path(__file__).parent
 
 def iam_elastic_pattern(xyzfile, q_arr):
     """
-    Calculate the total scattering intensity for a given atomic configuration.
+    Compute the elastic (coherent) X-ray scattering intensity (Debye scattering) 
+    for a molecule or atomic cluster.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing the atomic coordinates and element symbols.
+    q_arr : array_like
+        Array of momentum transfer values (q) at which to evaluate the scattering intensity.
+
+    Returns
+    -------
+    debye_image : ndarray
+        Elastic scattering intensity evaluated at each q in `q_arr`.
+
+    Notes
+    -----
+    - Uses atomic scattering factors loaded from 'Scattering_Factors.npy'.
+    - Includes both atomic self-scattering and molecular interference terms.
+    - The molecular interference term is calculated using the Debye formula with np.sinc.
     """
     num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
     coords = np.array(coords)  # Ensure coords is a NumPy array for advanced indexing
@@ -32,7 +51,7 @@ def iam_elastic_pattern(xyzfile, q_arr):
 
     # Atomic contribution (self-scattering)
     atomic_contribution = np.sum(scattering_factors**2, axis=0)
-    debye_image = np.copy(atomic_contribution)
+    elastic_pattern = np.copy(atomic_contribution)
 
     # Molecular contribution (interference terms)
     for i in range(num_atoms):
@@ -42,14 +61,33 @@ def iam_elastic_pattern(xyzfile, q_arr):
             r_ij = distances[i, j]
             # np.sinc(x) = sin(pi*x)/(pi*x), so argument is q*r/pi
             molecular_contribution = 2 * a * b * np.sinc(q_arr * r_ij / np.pi)
-            debye_image += molecular_contribution
+            elastic_pattern += molecular_contribution
 
-    return debye_image
+    return elastic_pattern
 
 
 def iam_inelastic_pattern(xyzfile, q_arr):
     """
-    Calculate the inelastic scattering intensity for a given atomic configuration.
+    Compute the inelastic (Compton) X-ray scattering intensity for a molecule 
+    or atomic cluster.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing the atomic coordinates and element symbols.
+    q_arr : array_like
+        Array of momentum transfer values (q) at which to evaluate the scattering intensity.
+
+    Returns
+    -------
+    inelastic_pattern : ndarray
+        Inelastic scattering intensity interpolated at each q in `q_arr`.
+
+    Notes
+    -----
+    - Uses Compton scattering factors loaded from 'Compton_Factors.npy'.
+    - Interpolation is performed using `InterpolatedUnivariateSpline` to return values at the requested q points.
+    - The q grid in the Compton factors is fixed; changing it requires updating the array.
     """
     num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms] # Get atomic numbers using mendeleev
@@ -66,6 +104,24 @@ def iam_inelastic_pattern(xyzfile, q_arr):
 
 def iam_total_pattern(xyzfile, q_arr):
     """
-    Calculate the elastic scattering intensity for a given atomic configuration.
+    Compute the total X-ray scattering intensity (elastic + inelastic) 
+    for a molecule or atomic cluster.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing the atomic coordinates and element symbols.
+    q_arr : array_like
+        Array of momentum transfer values (q) at which to evaluate the scattering intensity.
+
+    Returns
+    -------
+    total_pattern : ndarray
+        Total scattering intensity (elastic + inelastic) evaluated at each q in `q_arr`.
+
+    Notes
+    -----
+    - Combines the outputs of `iam_elastic_pattern` and `iam_inelastic_pattern`.
+    - Useful for simulating the full scattering signal from a molecular system.
     """
     return iam_elastic_pattern(xyzfile, q_arr) + iam_inelastic_pattern(xyzfile, q_arr)
