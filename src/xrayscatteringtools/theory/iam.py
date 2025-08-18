@@ -1,8 +1,10 @@
 from xrayscatteringtools.io import read_xyz
 from xrayscatteringtools.utils import element_symbol_to_number
 import numpy as np
-from scipy.interpolate import InterpolatedUnivariateSpline
+from scipy.interpolate import InterpolatedUnivariateSpline, interp1d
 import pathlib
+import xraylib
+from scipy.constants import physical_constants
 
 base_path = pathlib.Path(__file__).parent
 
@@ -65,7 +67,6 @@ def iam_elastic_pattern(xyzfile, q_arr):
 
     return elastic_pattern
 
-
 def iam_inelastic_pattern(xyzfile, q_arr):
     """
     Compute the inelastic (Compton) X-ray scattering intensity for a molecule 
@@ -99,9 +100,6 @@ def iam_inelastic_pattern(xyzfile, q_arr):
     spline_interp = InterpolatedUnivariateSpline(q_inelastic, inelastic_scattering) # Interpolate the inelastic scattering
     return spline_interp(q_arr) # Return the interpolated inelastic scattering to the desired q values
 
-
-
-
 def iam_total_pattern(xyzfile, q_arr):
     """
     Compute the total X-ray scattering intensity (elastic + inelastic) 
@@ -125,3 +123,91 @@ def iam_total_pattern(xyzfile, q_arr):
     - Useful for simulating the full scattering signal from a molecular system.
     """
     return iam_elastic_pattern(xyzfile, q_arr) + iam_inelastic_pattern(xyzfile, q_arr)
+
+def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.linspace(0,100,2000)):
+    """
+    Compute the Compton scattering spectrum for a molecule or atomic cluster.
+
+    Parameters
+    ----------
+    formula : str
+        Chemical formula of the molecule (e.g., "H2O").
+    theta : float or array_like
+        Scattering angles in radians. This is the full angle, equal to 2theta in literature.
+    EI_keV : float
+        Initial photon energy in kilo-electron volts (keV).
+    EF_keV_array : array_like
+        Array of final photon energies in kilo-electron volts (keV).
+    pz_au_grid : array_like, optional
+        Array of momentum transfer values at which to evaluate the scattering intensity.
+        Default is np.linspace(0,100,2000).
+
+    Returns
+    -------
+    compton_spectrum : ndarray
+        If theta is scalar: shape (len(EF_keV_array),)
+        If theta is array: shape (len(theta), len(EF_keV_array))
+    """
+    # Ensure inputs are arrays
+    theta = np.atleast_1d(theta)
+    EF_keV_array = np.atleast_1d(EF_keV_array)
+
+    system = xraylib.CompoundParser(formula)
+    m_e_c2_keV = physical_constants['electron mass energy equivalent in MeV'][0] * 1000  # keV
+    c = physical_constants['speed of light in vacuum'][0]
+    p_au = physical_constants['atomic unit of momentum'][0]
+    eV2J = physical_constants['electron volt-joule relationship'][0]
+
+    # Convert energies to Joules
+    EI_J = EI_keV * 1e3 * eV2J
+    EF_J = EF_keV_array * 1e3 * eV2J
+    m_e_c2_J = m_e_c2_keV * 1e3 * eV2J
+
+    # Calculate pz for all theta and EF_keV_array (broadcasting)
+    cos_theta = np.cos(theta)[:, None]  # shape (Ntheta,1)
+    numerator = (EI_J - EF_J)[None, :] * m_e_c2_J - EI_J * EF_J[None, :] * (1 - cos_theta)
+    term_under_sqrt = EI_J**2 + EF_J[None, :]**2 - 2*EI_J*EF_J[None, :]*cos_theta
+    term_under_sqrt = np.clip(term_under_sqrt, 0, None)  # avoid negative
+    denominator = c * np.sqrt(term_under_sqrt)
+    pz_si = np.divide(numerator, denominator, out=np.zeros_like(denominator), where=denominator!=0)
+    pz_au = pz_si / p_au  # shape (Ntheta, NE)
+
+    # Prepare result
+    compton_spectrum = np.zeros((len(theta), len(EF_keV_array)))
+
+    # Loop over elements because xraylib isn't vectorized
+    for Zidx, Z in enumerate(system['Elements']):
+        # Initialize contribution for this element
+        J_element = np.zeros_like(compton_spectrum)
+        nAtoms = system['nAtoms'][Zidx]
+        for shell in range(0,31):
+            try:
+                # Build Compton profile for this shell on the pz grid
+                J_partial_pz = [
+                    xraylib.ComptonProfile_Partial(Z, shell, float(p)) *
+                    xraylib.ElectronConfig(Z, shell)
+                    for p in pz_au_grid
+                ]
+                J_partial_interp = interp1d(
+                    pz_au_grid, J_partial_pz,
+                    bounds_error=False, fill_value=0.0
+                )
+
+                # Energy cutoff for this shell
+                shell_liftoff = EI_keV - xraylib.EdgeEnergy(Z, shell)
+
+                # Evaluate profile at all |pz| for every theta/E
+                for i_th in range(len(theta)):
+                    mask = EF_keV_array > shell_liftoff
+                    J_vals = J_partial_interp(np.abs(pz_au[i_th, :]))
+                    # Apply liftoff: zero contribution where EF > shell_liftoff
+                    J_element[i_th, :] += np.where(mask, 0.0, J_vals)
+            except Exception:
+                # Skip invalid shells
+                continue
+        compton_spectrum += nAtoms * J_element
+
+    # If theta was scalar, return 1D array
+    if compton_spectrum.shape[0] == 1:
+        return compton_spectrum[0]
+    return compton_spectrum

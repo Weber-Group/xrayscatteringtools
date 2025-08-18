@@ -20,6 +20,8 @@ dependencies = [
     "matplotlib"
     "tqdm"
     "h5py"
+    "requests"
+    "xraylib"
 ]
 
 [project.optional-dependencies]
