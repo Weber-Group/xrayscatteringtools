@@ -1,5 +1,6 @@
 import re
 from IPython import get_ipython
+import numpy as np
 
 def enable_underscore_cleanup():
     """Registers a post-cell hook to delete user-defined _ variables after each cell."""
@@ -27,6 +28,14 @@ def keV2Angstroms(keV):
 def Angstroms2keV(angstroms):
     """Convert wavelength in Angstroms to energy in keV."""
     return 12.39841984/angstroms
+
+def q2theta(q, keV):
+    """Convert momentum transfer (q) to scattering angle (theta) in radians."""
+    return 2 * np.arcsin(q * keV2Angstroms(keV) / (4 * np.pi))
+
+def theta2q(theta, keV):
+    """Convert scattering angle (theta) in radians to momentum transfer (q)."""
+    return 4 * np.pi / keV2Angstroms(keV) * np.sin(theta / 2)
 
 ELEMENT_NUMBERS = {
     "H": 1,  "He": 2,  "Li": 3,  "Be": 4,  "B": 5,
