@@ -1,7 +1,8 @@
 import numpy as np
 import h5py
 import tqdm.auto as tqdm
-
+from xrayscatteringtools.epicsArch import EpicsArchive
+from scipy.interpolate import interp1d
 
 def combineRuns(runNumbers, folder, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
     """Combine data from multiple runs into a single dataset.
