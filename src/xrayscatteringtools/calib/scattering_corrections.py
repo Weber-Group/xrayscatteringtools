@@ -511,4 +511,4 @@ def J4M_efficiency(keV):
     ] # in percent
 
     eff_Spline = InterpolatedUnivariateSpline(E_values, efficiency)
-    return eff_Spline(keV*1000) / 100  # Convert to 0-1
+    return eff_Spline(keV) / 100  # Convert to 0-1
