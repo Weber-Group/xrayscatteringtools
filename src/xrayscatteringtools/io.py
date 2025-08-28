@@ -1,6 +1,6 @@
 import numpy as np
 import h5py
-import tqdm.auto as tqdm
+from tqdm.auto import tqdm
 from xrayscatteringtools.epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 
