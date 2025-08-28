@@ -180,14 +180,17 @@ def Be_correction(q_arr, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     Accounts for partial path length through the Be window depending on
     scattering angle.
     """
+    # Compute attenuation length and scattering angles
     Belen = Be_attenuation_length(keV)
-    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
-    xBe = np.zeros_like(q_arr)
-    for i, theta in enumerate(thetas):
-        if rBe / np.tan(theta) <= L:
-            xBe[i] = rBe / np.tan(theta)
-        else:
-            xBe[i] = L
+    thetas = q2theta(q_arr, keV)  # same shape as q_arr
+
+    # Compute partial path length through Be window
+    xBe = np.minimum(rBe / np.tan(thetas), L)
+
+    # Avoid division by zero for theta=0
+    xBe = np.nan_to_num(xBe, nan=L, posinf=L, neginf=L)
+
+    # Compute correction factor
     nBe = xBe / L + (L - xBe) / L * np.exp(-tBe / (Belen * np.cos(thetas)))
     return nBe
 
@@ -217,14 +220,27 @@ def cell_correction(q_arr, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
     -----
     Accounts for the angle-dependent path length and geometry of the gas cell.
     """
-    thetas = q2theta(q_arr, keV) # In this implementation, the theta here is the same as 2theta in Ma et al.
-    xmax = tP - rP/np.tan(thetas)
-    nCell = np.zeros_like(q_arr)
-    for i, theta in enumerate(thetas):
-        if np.tan(theta) >= rP/tP:
-            nCell[i] = 1 + 1/L * rP / np.tan(theta)
-        else:
-            nCell[i] = 1 + 1/L * (tP + (rP * xmax[i]) / (xmax[i] - rP))
+    # Compute scattering angles
+    thetas = q2theta(q_arr, keV)  # same shape as q_arr
+    
+    # Precompute helper array
+    xmax = tP - rP / np.tan(thetas)
+    
+    # Mask to separate the two cases
+    cond = np.tan(thetas) >= (rP / tP)
+    
+    # Initialize output
+    nCell = np.empty_like(q_arr, dtype=float)
+    
+    # Case 1: tan(theta) >= rP/tP
+    nCell[cond] = 1 + (rP / (L * np.tan(thetas[cond])))
+    
+    # Case 2: tan(theta) < rP/tP
+    num = tP + (rP * xmax[~cond]) / (xmax[~cond] - rP)
+    nCell[~cond] = 1 + num / L
+    
+    # Handle any division-by-zero or invalid values safely
+    nCell = np.nan_to_num(nCell, nan=1.0, posinf=1.0, neginf=1.0)
     return nCell
 
 
