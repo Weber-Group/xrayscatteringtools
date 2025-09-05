@@ -12,16 +12,16 @@ def run_geometry_calibration(
         theory_q,
         theory_Iq,
         photon_energy_keV,
-        initial_guess={'amplitude' : 1,'x0': 0, 'y0': 0, 'z0': 90000, 'phi0': 0},
-        fit_phi=False,
+        initial_guess={'amplitude' : 1,'x0': 0, 'y0': 0, 'z0': 90000},
+        polarization = 0,
         mask_center=True,
         mask_center_size=7500,
-        fit_bounds = ([0, -10_000, -10_000, 30_000, -np.pi/2], [np.inf, 10_000, 10_000, 150_000, np.pi/2])
+        bounds = ([0, -10_000, -10_000, 30_000], [np.inf, 10_000, 10_000, 150_000])
         ):
     """
     Perform geometry calibration on a raw detector image using a theoretical scattering pattern.
 
-    This function fits the detector geometry parameters (x0, y0, z0, phi0) by comparing the
+    This function fits the detector geometry parameters (x0, y0, z0) by comparing the
     measured image to a theoretical scattering pattern and applying corrections for
     polarization (Thompson), geometry, and angle-of-scattering effects.
 
@@ -45,10 +45,9 @@ def run_geometry_calibration(
         Initial guess for fit parameters:
         - 'amplitude' : float, scaling of the intensity
         - 'x0', 'y0', 'z0' : float, initial guesses for detector geometry
-        - 'phi0' : float, initial azimuthal rotation (radians)
-        Default: {'amplitude': 1, 'x0': 0, 'y0': 0, 'z0': 90000, 'phi0': 0}.
-    fit_phi : bool, optional
-        If True, fit the azimuthal rotation phi0. Default is False.
+        Default: {'amplitude': 1, 'x0': 0, 'y0': 0, 'z0': 90000}.
+    polarization : float, optional
+        Polarization direction (-pi/2 to pi/2). Default is 0 (horizontally polarized).
     mask_center : bool, optional
         If True, exclude pixels near the center from the fit. Default is True.
     mask_center_size : float, optional
@@ -62,7 +61,7 @@ def run_geometry_calibration(
     fit : ndarray
         3D array representing the fitted detector image (reshaped to match input dimensions).
     popt : ndarray
-        Optimized fit parameters: [amplitude, x0, y0, z0, (phi0 if fit_phi=True)]. In units of microns.
+        Optimized fit parameters: [amplitude, x0, y0, z0]. In units of microns.
     pcov : ndarray
         Covariance matrix of the optimized parameters.
 
@@ -82,16 +81,9 @@ def run_geometry_calibration(
     theory_interpolation = InterpolatedUnivariateSpline(theory_q, theory_Iq, ext=3) # Extrapolation 3. Returns Boundary value if outside of range.
 
     # Step two: Define initial guess, bounds, and fitting function using a wrapper
-    if fit_phi:
-        p0 = [initial_guess['amplitude'], initial_guess['x0'], initial_guess['y0'], initial_guess['z0'], initial_guess['phi0']]
-        bounds = fit_bounds
-        def fitting_function(xy, amplitude, x0, y0, z0, phi0):
-            return model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolation)
-    else:
-        p0 = [initial_guess['amplitude'], initial_guess['x0'], initial_guess['y0'], initial_guess['z0']]
-        bounds = tuple(_bound[:-1] for _bound in fit_bounds) # Remove phi0 from bounds
-        def fitting_function(xy, amplitude, x0, y0, z0):
-            return model(xy, amplitude, x0, y0, z0, 0, photon_energy_keV, theory_interpolation)
+    p0 = [initial_guess['amplitude'], initial_guess['x0'], initial_guess['y0'], initial_guess['z0']]
+    def fitting_function(xy, amplitude, x0, y0, z0):
+        return model(xy, amplitude, x0, y0, z0, polarization, photon_energy_keV, theory_interpolation)
 
     # Step three: Masking and formatting variables
     center_mask = np.ones_like(raw_image, dtype=bool)
