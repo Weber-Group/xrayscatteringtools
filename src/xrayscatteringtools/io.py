@@ -3,29 +3,86 @@ import h5py
 from tqdm.auto import tqdm
 from xrayscatteringtools.epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
+import yaml
 
-def combineRuns(runNumbers, folder, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
-    """Combine data from multiple runs into a single dataset.
+def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
+    """
+    Combine data from multiple experimental runs into a single consolidated dataset.
+
+    This function loads data from HDF5 files corresponding to each run, concatenates or sums
+    selected keys, checks consistency of other keys, and optionally fills missing EPICS 
+    gas cell pressure data from an archive. Each run's data can reside in a separate folder 
+    or in a single common folder.
 
     Parameters
     ----------
-    runNumbers : list of int
-        List of run numbers to combine.
-    folder : str
-        Path to the folder containing the data files.
+    runNumbers : int or list of int
+        Run number(s) to load and combine. Can be a single integer or a list of integers.
+    folders : str, bytes, list, or tuple
+        Path(s) to the folder(s) containing the data files. If a single string is provided,
+        it is repeated for all run numbers. If multiple folders are provided, the number of
+        folders must match the number of run numbers.
+    keys_to_combine : list of str
+        Keys in the data files whose arrays should be concatenated along the first axis.
+    keys_to_sum : list of str
+        Keys in the data files whose arrays should be summed element-wise across runs.
+    keys_to_check : list of str
+        Keys for which consistency across runs should be verified. If any discrepancies
+        are found, a warning is printed.
     verbose : bool, optional
-        If True, print detailed information during processing (default: False).
+        If True, prints detailed information during data loading (default: False).
+    archImport : bool, optional
+        If True, enables special handling of missing gas cell pressure data from older
+        archive files (default: False).
 
     Returns
     -------
     data_combined : dict
-        Dictionary containing combined data from all runs.
+        Dictionary containing the combined data from all runs. Keys include:
+        - Concatenated keys from `keys_to_combine`
+        - Summed keys from `keys_to_sum`
+        - Checked keys from `keys_to_check`
+        - `'run_indicator'`: an array indicating which run each data point belongs to
+        - `'epicsUser/gasCell_pressure'`: filled either from files or from the EPICS archive
+          if `archImport` is True and the key was missing.
+
+    Raises
+    ------
+    TypeError
+        If `folders` is not a string, bytes, list, or tuple.
+    ValueError
+        If multiple folders are provided but the number of folders does not match
+        the number of run numbers.
     """
+    # Ensure runNumbers is a list
+    if not isinstance(runNumbers, (list, tuple)):
+        runNumbers = [runNumbers]
+
+    # If folders is a string or bytes, make it a list of one element
+    if isinstance(folders, (str, bytes)):
+        folders = [folders]
+    # If folders is a tuple, convert to list
+    elif isinstance(folders, tuple):
+        folders = list(folders)
+    # If folders is already a list, keep as is
+    elif not isinstance(folders, list):
+        raise TypeError(f"'folders' must be a string, bytes, list, or tuple. Got {type(folders)}")
+
+    if len(folders) > 1:
+        if len(folders) != len(runNumbers):
+            raise ValueError(
+                f"If 'folders' has more than one element, its length must match 'runNumbers'. "
+                f"Got len(runNumbers)={len(runNumbers)} and len(folders)={len(folders)}."
+            )
+    else:
+        # Repeat the single folders to match the length of runNumbers
+        folders = folders * len(runNumbers)
+        
     data_array = []
-    experiment = folder.split('/')[6]
     for i,runNumber in enumerate(tqdm(runNumbers,desc="Loading Runs")):
         data = {}
-        filename = f'{folder}{experiment}_Run{runNumToString(runNumber)}.h5'
+        experiment = folders[i].split('/')[6]
+        filename = f'{folders[i]}{experiment}_Run{runNumToString(runNumber)}.h5'
         print('Loading: ' + filename)
         with h5py.File(filename,'r') as f:
             get_leaves(f,data,verbose=verbose)
@@ -136,6 +193,58 @@ def get_leaves(f, saveto, verbose=False):
                 print(name, f[name][()].shape)
             saveto[name] = f[name][()]
     f.visit(return_leaf)
+
+def get_data_paths(run_numbers, config_path='config.yaml'):
+    """
+    Retrieve data directories for a list of run numbers.
+
+    Reads a YAML configuration file specifying run ranges and associated
+    data paths, returning the paths corresponding to the provided run numbers.
+
+    Parameters
+    ----------
+    run_numbers : int or iterable of int
+        Run number(s) for which the data paths are requested.
+    config_path : str, optional
+        Path to the YAML configuration file (default is 'config.yaml').
+
+    Returns
+    -------
+    list of str
+        Data directory paths corresponding to each run number.
+
+    Raises
+    ------
+    ValueError
+        If any run number does not have a corresponding data path.
+    FileNotFoundError
+        If the configuration file does not exist.
+    yaml.YAMLError
+        If there is an error parsing the YAML configuration file.
+
+    Examples
+    --------
+    >>> get_data_paths([5, 15, 25], 'config.yaml')
+    ['/sdf/data/lcls/ds/cxi/cxil', '/sdf/data/lcls/ds/cxi/cxil2', '/sdf/data/lcls/ds/cxi/cxil3']
+    """
+    # Ensure run_numbers is iterable
+    if isinstance(run_numbers, int):
+        run_numbers = [run_numbers]
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    paths = []
+    for run in run_numbers:
+        for entry in config['data_paths']:
+            lower, upper = entry['runs']
+            if lower <= run <= upper:
+                paths.append(entry['path'])
+                break
+        else:
+            raise ValueError(f"No data path found for run number: {run}")
+
+    return paths
 
 def runNumToString(num):
     """Convert a run number to a zero-padded string of length 4.
