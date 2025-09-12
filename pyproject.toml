@@ -21,7 +21,8 @@ dependencies = [
     "tqdm",
     "h5py",
     "requests",
-    "xraylib"
+    "xraylib",
+    "pyyaml"
 ]
 
 [project.optional-dependencies]
