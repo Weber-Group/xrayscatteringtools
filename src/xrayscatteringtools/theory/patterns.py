@@ -33,7 +33,7 @@ def __getattr__(name):
         Notes
         -----
         The total scattering data was received from Andres M. Carrascosa on Aug 26, 2025. The elastic calculation was received on Sept 15, 2025.
-        Andres notes that both were calculated at the CCSD/AVDZ level of theory. The conversion from a.u. to 1/Angstrom was done using the factor 1.8897261246257702.
+        Andres notes that both were calculated at the CCSD/AVDZ level of theory. The conversion from a.u. to 1/Angstrom was done using the factor 1.8897261259077822.
         """
         return obj
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
