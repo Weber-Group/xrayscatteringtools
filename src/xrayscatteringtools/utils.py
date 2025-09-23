@@ -296,6 +296,46 @@ def azimuthalBinning(
 
     return np.squeeze(radial_centers), np.squeeze(azimuthal_average)
 
+def au2invAngstroms(au):
+    """
+    Convert momentum transfer from atomic units (a.u., 1/Bohr) to inverse Angstroms (Å⁻¹).
+
+    Parameters
+    ----------
+    au : float
+        Momentum transfer in atomic units (1/Bohr).
+
+    Returns
+    -------
+    float
+        Corresponding momentum transfer in inverse Angstroms.
+
+    Notes
+    -----
+    Uses the conversion factor 1 a.u. = 1.8897261259077822 Å⁻¹.
+    """
+    return 1.8897261259077822 * au
+
+def invAngstroms2au(invA):
+    """
+    Convert momentum transfer from inverse Angstroms (Å⁻¹) to atomic units (a.u., 1/Bohr).
+
+    Parameters
+    ----------
+    invA : float
+        Momentum transfer in inverse Angstroms (Å⁻¹).
+
+    Returns
+    -------
+    float
+        Corresponding momentum transfer in atomic units (1/Bohr).
+
+    Notes
+    -----
+    Uses the conversion factor 1 a.u. = 1.8897261259077822 Å⁻¹.
+    """
+    return invA / 1.8897261259077822
+
 def keV2Angstroms(keV):
     """
     Convert photon energy from keV to wavelength in Angstroms.
