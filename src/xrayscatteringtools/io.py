@@ -88,9 +88,10 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
             get_leaves(f,data,verbose=verbose)
             data_array.append(data)
     data_combined = {}
+    epicsLoad = False # Default flag value, must be set for later on
     for key in keys_to_combine:
         # Special routine for loading the gas cell pressure if it was not saved. Likely a better way to do this... should talk to silke
-        epicsLoad = False # Default flag value
+        epicsLoad = False # Default flag value for each key
         if (key == 'epicsUser/gasCell_pressure') & (archImport):
             try:
                 arr = np.squeeze(data_array[0][key])
