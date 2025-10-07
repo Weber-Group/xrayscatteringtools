@@ -1,6 +1,9 @@
 from scipy.interpolate import InterpolatedUnivariateSpline
 from xrayscatteringtools.utils import q2theta
 import numpy as np
+import pathlib
+_data_path = pathlib.Path(__file__).parent / "data"
+import h5py
 
 def correction_factor(
     q_arr, 
@@ -278,7 +281,7 @@ def Si_attenuation_length(keV):
         17200.0, 17340.0, 17480.0, 17620.0, 17760.0, 17900.0, 18040.0, 18180.0,
         18320.0, 18460.0, 18600.0, 18740.0, 18880.0, 19020.0, 19160.0, 19300.0,
         19440.0, 19580.0, 19720.0, 19860.0, 20000.0
-    ] # eV
+        ] # eV
 
     length = [
         30.2985, 32.3736, 34.5409, 36.8058, 39.1665, 41.6272, 44.1903, 46.8565,
@@ -294,7 +297,7 @@ def Si_attenuation_length(keV):
         664.092, 680.241, 696.650, 713.315, 730.242, 747.427, 764.877, 782.593,
         800.574, 818.826, 837.346, 856.145, 875.212, 894.559, 914.172, 934.073,
         954.240, 974.706, 995.446, 1016.48, 1037.80
-    ] # Micron
+        ] # Micron
     Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
     return Mu_Spline(keV*1000) * 1e-6  # Convert to m
 
@@ -331,7 +334,7 @@ def Al_attenuation_length(keV):
         17200.0, 17340.0, 17480.0, 17620.0, 17760.0, 17900.0, 18040.0, 18180.0,
         18320.0, 18460.0, 18600.0, 18740.0, 18880.0, 19020.0, 19160.0, 19300.0,
         19440.0, 19580.0, 19720.0, 19860.0, 20000.0
-    ] # eV
+        ] # eV
 
     length = [
         33.5963, 35.9138, 38.3384, 40.8699, 43.5113, 46.2649, 49.1331, 52.1183,
@@ -347,7 +350,7 @@ def Al_attenuation_length(keV):
         747.339, 765.542, 784.034, 802.811, 821.888, 841.256, 860.921, 880.880,
         901.138, 921.698, 942.559, 963.730, 985.201, 1006.98, 1029.06, 1051.47,
         1074.17, 1097.20, 1120.53, 1144.28, 1168.39
-    ] # Micron
+        ] # Micron
     Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
     return Mu_Spline(keV*1000) * 1e-6 # Convert to meters
 
@@ -384,7 +387,7 @@ def Be_attenuation_length(keV):
         17200.0, 17340.0, 17480.0, 17620.0, 17760.0, 17900.0, 18040.0, 18180.0,
         18320.0, 18460.0, 18600.0, 18740.0, 18880.0, 19020.0, 19160.0, 19300.0,
         19440.0, 19580.0, 19720.0, 19860.0, 20000.0
-    ]
+        ]
 
     length = [
         2236.49, 2400.58, 2571.82, 2751.11, 2938.12, 3132.45, 3334.08, 3542.98,
@@ -400,7 +403,7 @@ def Be_attenuation_length(keV):
         24889.3, 25093.0, 25292.3, 25487.3, 25678.0, 25864.3, 26046.5, 26224.5,
         26398.4, 26568.2, 26734.0, 26895.9, 27054.0, 27208.2, 27358.8, 27505.5,
         27648.7, 27788.3, 27924.5, 28057.2, 28186.6
-    ]
+        ]
 
     Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
     return Mu_Spline(keV*1000) * 1e-6  # Convert to m
@@ -438,7 +441,7 @@ def KaptonHN_attenuation_length(keV):
         17200.0, 17340.0, 17480.0, 17620.0, 17760.0, 17900.0, 18040.0, 18180.0,
         18320.0, 18460.0, 18600.0, 18740.0, 18880.0, 19020.0, 19160.0, 19300.0,
         19440.0, 19580.0, 19720.0, 19860.0, 20000.0
-    ]
+        ]
 
     length = [
         482.639, 518.357, 555.868, 595.186, 636.377, 679.478, 724.515, 771.554,
@@ -454,8 +457,33 @@ def KaptonHN_attenuation_length(keV):
         10957.8, 11176.1, 11395.2, 11615.0, 11835.5, 12056.6, 12278.2, 12500.2,
         12722.5, 12945.2, 13168.0, 13391.0, 13614.1, 13837.0, 14060.0, 14282.6,
         14505.1, 14727.2, 14948.9, 15160.9, 15367.5
-]
+        ]
 
+    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
+    return Mu_Spline(keV*1000) * 1e-6  # Convert to m
+
+def Zn_attenuation_length(keV):
+    """
+    Calculate the X-ray attenuation length of Zinc (Zn) for a given photon energy.
+
+    Parameters
+    ----------
+    keV : float
+        Photon energy in keV.
+
+    Returns
+    -------
+    float
+        Attenuation length of Zn in meters.
+
+    Notes
+    -----
+    Uses spline interpolation of tabulated attenuation lengths (in microns),
+    then converts them to meters.
+    """
+    with h5py.File('Zn_attenuation_length.h5', 'r') as f:
+        E_values = f['E_values'][:]
+        length = f['length'][:]
     Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
     return Mu_Spline(keV*1000) * 1e-6  # Convert to m
 
