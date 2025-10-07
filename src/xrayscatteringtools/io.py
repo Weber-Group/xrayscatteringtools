@@ -4,6 +4,7 @@ from tqdm.auto import tqdm
 from xrayscatteringtools.epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 import yaml
+from xrayscatteringtools.utils import element_number_to_symbol
 
 def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
     """
@@ -309,3 +310,26 @@ def read_xyz(filename):
     
     return num_atoms, comment, atoms, coords
 
+def write_xyz(filename, comment, atoms, coords):
+    """
+    Save atomic coordinates to an XYZ file.
+
+    Parameters
+    ----------
+    filename : str
+        The name of the output XYZ file.
+    comment : str
+        A comment line to include in the XYZ file.
+    atoms : list
+        List of atomic symbols or numbers.
+    coords : np.ndarray
+        Nx3 array of atomic coordinates (x, y, z).
+    """
+    # Convert atomic numbers to symbols if necessary
+    atoms = [element_number_to_symbol(atom) if isinstance(atom, int) else atom for atom in atoms]
+    # Write the data to the file
+    with open(filename, 'w') as f:
+        f.write(f"{len(atoms)}\n")
+        f.write(f"{comment}\n")
+        for atom, (x, y, z) in zip(atoms, coords):
+            f.write(f"{atom} {x:.6f} {y:.6f} {z:.6f}\n")

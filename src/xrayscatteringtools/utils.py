@@ -494,3 +494,68 @@ def element_number_to_symbol(number: int) -> str:
         If the atomic number is not valid.
     """
     return ELEMENT_SYMBOLS[number]
+
+import numpy as np
+
+def translate_molecule(coords, translation_vector):
+    """
+    Translate molecular coordinates by a given vector.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        Nx3 array of atomic coordinates.
+    translation_vector : np.ndarray
+        1x3 array representing the translation vector.
+
+    Returns
+    -------
+    np.ndarray
+        Translated coordinates.
+    """
+    return coords + translation_vector
+
+def rotate_molecule(coords, alpha, beta, gamma):
+    """
+    Rotate molecular coordinates by given Euler angles (in degrees).
+    Uses the ZYX convention (yaw-pitch-roll).
+    Parameters
+    ----------
+    coords : np.ndarray
+        Nx3 array of atomic coordinates.
+    alpha : float
+        Rotation angle around x-axis in degrees.
+    beta : float
+        Rotation angle around y-axis in degrees.
+    gamma : float
+        Rotation angle around z-axis in degrees.
+
+    Returns
+    -------
+    np.ndarray
+        Rotated coordinates.
+    """
+    # Convert angles from degrees to radians
+    alpha = np.radians(alpha)
+    beta = np.radians(beta)
+    gamma = np.radians(gamma)
+    
+    # Rotation matrices around x, y, and z axes
+    R_x = np.array([[1, 0, 0],
+                    [0, np.cos(alpha), -np.sin(alpha)],
+                    [0, np.sin(alpha), np.cos(alpha)]])
+    
+    R_y = np.array([[np.cos(beta), 0, np.sin(beta)],
+                    [0, 1, 0],
+                    [-np.sin(beta), 0, np.cos(beta)]])
+    
+    R_z = np.array([[np.cos(gamma), -np.sin(gamma), 0],
+                    [np.sin(gamma), np.cos(gamma), 0],
+                    [0, 0, 1]])
+    
+    # Combined rotation matrix
+    R = R_z @ R_y @ R_x
+    
+    # Rotate all coordinates
+    rotated_coords = coords @ R.T
+    return rotated_coords

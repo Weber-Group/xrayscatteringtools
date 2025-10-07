@@ -211,3 +211,127 @@ def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.lin
     if compton_spectrum.shape[0] == 1:
         return compton_spectrum[0]
     return compton_spectrum
+
+def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
+    """
+    Computes the elastic X-ray scattering pattern for a fixed-orientation molecule
+    on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
+
+    This corresponds to a planar slice through the 3D scattering volume, typically
+    the qx-qy plane.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing atomic coordinates and element symbols.
+    q_arr : array_like
+        1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
+        are the radial coordinates for the output grid.
+    phi_arr : array_like
+        1D array of azimuthal angles (phi) in radians [0, 2*pi]. These are the
+        angular coordinates for the output grid.
+
+    Returns
+    -------
+    oriented_pattern : ndarray
+        2D array of the elastic scattering intensity, with shape
+        (len(q_arr), len(phi_arr)).
+    """
+    # 1. Read atomic data
+    num_atoms, _, atoms, coords = read_xyz(xyzfile)
+    coords = np.array(coords)
+    atomic_numbers = [element_symbol_to_number(atom) for atom in atoms]
+    scattering_factors_coeffs = np.load(base_path / 'Scattering_Factors.npy', allow_pickle=True)
+
+    # 2. Create a polar grid of q-vectors in the qx-qy plane
+    q_grid, phi_grid = np.meshgrid(q_arr, phi_arr, indexing='ij')
+
+    # 3. Calculate q-dependent atomic scattering factors F(q)
+    # F(q) depends only on the magnitude of q, which is our radial coordinate.
+    scattering_factors = np.zeros((num_atoms, len(q_arr), len(phi_arr)))
+    q4pi_sq_grid = (q_grid / (4 * np.pi))**2
+    for i, atom_num in enumerate(atomic_numbers):
+        fc = scattering_factors_coeffs[atom_num - 1]
+        scattering_factors[i, :, :] = (
+            fc[0] * np.exp(-fc[4] * q4pi_sq_grid) + fc[1] * np.exp(-fc[5] * q4pi_sq_grid) +
+            fc[2] * np.exp(-fc[6] * q4pi_sq_grid) + fc[3] * np.exp(-fc[7] * q4pi_sq_grid) +
+            fc[8]
+        )
+
+    # 4. Calculate the total scattering amplitude
+    # Define the q-vectors for our planar slice (qz = 0)
+    qx = q_grid * np.cos(phi_grid)
+    qy = q_grid * np.sin(phi_grid)
+    qz = np.zeros_like(q_grid)
+    q_vectors_grid = np.stack([qx, qy, qz], axis=-1)
+
+    # Calculate dot products (q . R_k)
+    dot_products = np.tensordot(coords, q_vectors_grid, axes=([1], [2]))
+
+    # Calculate complex atomic amplitudes: A_k = F_k(q) * exp(i * q . R_k)
+    atomic_amplitudes = scattering_factors * np.exp(1j * dot_products)
+
+    # Sum over all atoms
+    total_amplitude = np.sum(atomic_amplitudes, axis=0)
+
+    # 5. Intensity is the squared magnitude of the total amplitude
+    oriented_pattern = np.abs(total_amplitude)**2
+
+    return oriented_pattern
+
+def iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr):
+    """
+    Computes the inelastic (Compton) X-ray scattering pattern for a fixed-orientation molecule
+    on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
+
+    This corresponds to a planar slice through the 3D scattering volume, typically
+    the qx-qy plane.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing atomic coordinates and element symbols.
+    q_arr : array_like
+        1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
+        are the radial coordinates for the output grid.
+    phi_arr : array_like
+        1D array of azimuthal angles (phi) in radians [0, 2*pi]. These are the
+        angular coordinates for the output grid.
+
+    Returns
+    -------
+    oriented_pattern : ndarray
+        2D array of the inelastic scattering intensity, with shape
+        (len(q_arr), len(phi_arr)).
+    """
+
+    inelastic_pattern = iam_inelastic_pattern(xyzfile, q_arr)  # Get the 1D inelastic pattern
+    oriented_pattern = np.tile(inelastic_pattern[:, np.newaxis], (1, len(phi_arr)))  # Expand to 2D
+    return oriented_pattern
+
+def iam_total_pattern_oriented(xyzfile, q_arr, phi_arr):
+    """
+    Computes the total X-ray scattering pattern (elastic + inelastic) for a fixed-orientation molecule
+    on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
+
+    This corresponds to a planar slice through the 3D scattering volume, typically
+    the qx-qy plane.
+
+    Parameters
+    ----------
+    xyzfile : str or Path
+        Path to an XYZ file containing atomic coordinates and element symbols.
+    q_arr : array_like
+        1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
+        are the radial coordinates for the output grid.
+    phi_arr : array_like
+        1D array of azimuthal angles (phi) in radians [0, 2*pi]. These are the
+        angular coordinates for the output grid.
+    Returns
+    -------
+    oriented_pattern : ndarray
+        2D array of the total scattering intensity (elastic + inelastic), with shape
+        (len(q_arr), len(phi_arr)).
+    """
+    return iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr) + iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr)
+
