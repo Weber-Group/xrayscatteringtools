@@ -100,7 +100,7 @@ def run_geometry_calibration(
     fit = fitting_function([np.ravel(x), np.ravel(y)], *popt).reshape(raw_image.shape)
     return fit, popt, pcov
 
-def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolation):
+def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolation, do_geometry_correction=True, do_thompson_correction=True, do_angle_of_scattering_correction=True):
     """
     Calculate the theoretical detector image for given geometry parameters.
 
@@ -138,9 +138,12 @@ def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolati
 
     # Calculate corrections
     corrections = np.ones_like(q_matrix)
-    corrections *= thompson_correction(centered_x, centered_y, z0, phi0) # Polarization
-    corrections *= geometry_correction(centered_x, centered_y, z0) # Geometry
-    corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
+    if do_thompson_correction:
+        corrections *= thompson_correction(centered_x, centered_y, z0, phi0) # Polarization
+    if do_geometry_correction:
+        corrections *= geometry_correction(centered_x, centered_y, z0) # Geometry
+    if do_angle_of_scattering_correction:
+        corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
     fit = amplitude * theory_interpolation(q_matrix) * corrections
     return fit
 
