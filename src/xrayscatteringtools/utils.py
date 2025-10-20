@@ -495,8 +495,6 @@ def element_number_to_symbol(number: int) -> str:
     """
     return ELEMENT_SYMBOLS[number]
 
-import numpy as np
-
 def translate_molecule(coords, translation_vector):
     """
     Translate molecular coordinates by a given vector.
