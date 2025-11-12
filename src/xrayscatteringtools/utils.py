@@ -1,6 +1,11 @@
 import re
 from IPython import get_ipython
 import numpy as np
+import h5py
+from types import SimpleNamespace
+import pathlib
+
+_data_path = pathlib.Path(__file__).parent / "data"
 
 def enable_underscore_cleanup():
     """
@@ -555,3 +560,23 @@ def rotate_molecule(coords, alpha, beta, gamma):
     # Rotate all coordinates
     rotated_coords = coords @ R.T
     return rotated_coords
+
+def _load_J4M():
+    file_path = _data_path / "Jungfrau.h5"
+    with h5py.File(file_path, "r") as f:
+        # Load all datasets into memory
+        data = {k: f[k][()] for k in f.keys()}
+        obj = SimpleNamespace(**data)
+        obj.__doc__ = """
+        Jungfrau4M constant properties.
+
+        Attributes
+        ----------
+        x : ndarray of shape (8, 512, 1024)
+            Pixel x-coordinates in microns.
+        y : ndarray of shape (8, 512, 1024)
+            Pixel y-coordinates in microns.
+        """
+    return obj
+
+J4M = _load_J4M() 
