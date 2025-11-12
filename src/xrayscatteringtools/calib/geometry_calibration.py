@@ -100,7 +100,22 @@ def run_geometry_calibration(
     fit = fitting_function([np.ravel(x), np.ravel(y)], *popt).reshape(raw_image.shape)
     return fit, popt, pcov
 
-def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolation, do_geometry_correction=True, do_thompson_correction=True, do_angle_of_scattering_correction=True):
+def model(
+        xy,
+        amplitude,
+        x0,
+        y0,
+        z0,
+        phi0,
+        photon_energy_keV,
+        theory_interpolation,
+        do_geometry_correction=True,
+        do_thompson_correction=True,
+        do_angle_of_scattering_correction=True,
+        do_geometry_correction_units=False,
+        dx=75,
+        dy=75
+        ):
     """
     Calculate the theoretical detector image for given geometry parameters.
 
@@ -118,12 +133,25 @@ def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolati
         Photon energy in keV.
     theory_interpolation : callable
         Interpolated function for theoretical scattering intensities versus q.
+    do_geometry_correction : bool, optional
+        If True, apply geometry correction. Default is True.
+    do_thompson_correction : bool, optional
+        If True, apply Thompson polarization correction. Default is True.
+    do_angle_of_scattering_correction : bool, optional
+        If True, apply angle-of-scattering correction. Default is True.
+    do_geometry_correction_units : bool, optional
+        If True, apply geometry accounting for proper solid angle subtension. Default is False.
+    dx, dy : float, optional
+        Pixel size in microns for geometry correction with units. Default is 75 microns. If do_geometry_correction_units is False, these are ignored.
 
     Returns
     -------
     fit : ndarray
         Flattened array of predicted intensities for each pixel.
 
+    Notes
+    -----
+    Do not use both do_geometry_correction and do_geometry_correction_units at the same time.
     """
     # Pull out the x and y arrays from the input
     x = xy[0]
@@ -144,6 +172,8 @@ def model(xy, amplitude, x0, y0, z0, phi0, photon_energy_keV, theory_interpolati
         corrections *= geometry_correction(centered_x, centered_y, z0) # Geometry
     if do_angle_of_scattering_correction:
         corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
+    if do_geometry_correction_units:
+        corrections *= geometry_correction_units(centered_x, centered_y, z0, dx, dy) # Geometry correctly accounting for solid angle subtension per pixel
     fit = amplitude * theory_interpolation(q_matrix) * corrections
     return fit
 
@@ -154,7 +184,7 @@ def thompson_correction(x, y, z0, phi0):
     Parameters
     ----------
     x, y : ndarray
-        Pixel coordinates relative to detector origin.
+        Pixel coordinates relative to signal origin.
     z0 : float
         Detector distance along beam axis.
     phi0 : float
@@ -184,7 +214,7 @@ def geometry_correction(x, y, z0):
     Parameters
     ----------
     x, y : ndarray
-        Pixel coordinates relative to detector origin.
+        Pixel coordinates relative to signal origin.
     z0 : float
         Detector distance along beam axis.
 
@@ -204,4 +234,32 @@ def geometry_correction(x, y, z0):
     r_matrix = np.sqrt(x**2 + y**2)
     theta = np.arctan(r_matrix / z0)
     correction = np.cos(theta) ** 3
+    return correction
+
+def geometry_correction_units(x, y, z0, dx, dy):
+    """
+    Compute geometric correction factor z0^2 cos^3(theta) / dxdy for a detector, accounting for pixel area and distance units.
+    
+    Parameters
+    ----------
+    x, y : ndarray
+        Pixel coordinates relative to signal origin.
+    z0 : float
+        Detector distance along beam axis.
+    dx, dy : float
+        Pixel size in x and y directions.
+    
+    Returns
+    -------
+    correction : ndarray
+        Geometric correction factor for each pixel.
+
+    Notes
+    -----
+    The geometry correction comes from the inverse square law and the effective area of the pixel.
+    The inverse square law accounts for z^2 cos^2(theta), and the effective area is cos(theta)/dxdy.
+    """
+    r_matrix = np.sqrt(x**2 + y**2)
+    theta = np.arctan(r_matrix / z0)
+    correction = np.cos(theta)**3 * (dx * dy) / z0**2
     return correction

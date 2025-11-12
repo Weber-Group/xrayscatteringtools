@@ -481,7 +481,7 @@ def Zn_attenuation_length(keV):
     Uses spline interpolation of tabulated attenuation lengths (in microns),
     then converts them to meters.
     """
-    with h5py.File('Zn_attenuation_length.h5', 'r') as f:
+    with h5py.File(f"{_data_path}/Zn_attenuation_length.h5", 'r') as f:
         E_values = f['E_values'][:]
         length = f['length'][:]
     Mu_Spline = InterpolatedUnivariateSpline(E_values, length)

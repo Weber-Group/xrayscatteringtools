@@ -195,7 +195,7 @@ def azimuthalBinning(
 
     if geomCorr:
         # Solid angle correction.
-        geom_correction = (z_total / r**3)
+        geom_correction = (z_total**2 / r**3)
         geom_correction /= np.nanmax(geom_correction)
 
     if polCorr:
@@ -269,11 +269,6 @@ def azimuthalBinning(
     total_bins = n_phi_bins * n_radial_bins
     combined_indices = np.ravel_multi_index((phi_indices, radial_indices), (n_phi_bins, n_radial_bins))
 
-    indicies_for_norm = combined_indices.copy()
-    indicies_for_norm[mask.ravel()] = 0  # Masked pixels go to first bin
-    pixel_counts = np.bincount(indicies_for_norm, minlength=total_bins)
-    norm_map = np.reshape(pixel_counts, (n_phi_bins, n_radial_bins))
-
     # Prep data for intensity summation, excluding masked and thresholded pixels
     final_mask = mask.ravel() | threshold_mask.ravel()
     valid_pixels = ~final_mask
@@ -281,6 +276,9 @@ def azimuthalBinning(
     valid_indices = combined_indices[valid_pixels]
     valid_img = img.ravel()[valid_pixels]
     valid_correction = correction.ravel()[valid_pixels]
+
+    pixel_counts = np.bincount(valid_indices, minlength=total_bins)
+    norm_map = np.reshape(pixel_counts, (n_phi_bins, n_radial_bins))
 
     # Calculate the sum of corrected intensities in each bin
     summed_intensity = np.bincount(
