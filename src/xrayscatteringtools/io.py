@@ -1,10 +1,9 @@
 import numpy as np
 import h5py
-from tqdm.auto import tqdm
-from xrayscatteringtools.epicsArch import EpicsArchive
+from .epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 import yaml
-from xrayscatteringtools.utils import element_number_to_symbol
+from .utils import element_number_to_symbol
 
 def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
     """
@@ -55,6 +54,7 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         If multiple folders are provided but the number of folders does not match
         the number of run numbers.
     """
+    from tqdm.auto import tqdm # Lazy
     # Ensure runNumbers is a list
     if not isinstance(runNumbers, (list, tuple)):
         runNumbers = [runNumbers]

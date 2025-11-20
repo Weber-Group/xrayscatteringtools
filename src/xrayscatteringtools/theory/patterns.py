@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import h5py
 import pathlib
-from xrayscatteringtools.utils import invAngstroms2au, au2invAngstroms
+from ..utils import invAngstroms2au, au2invAngstroms
 
 # Generally the import names go like 'molecule_method_basisset' Put all available names in __all__. These should match the .h5 files in the data directory.
 __all__ = [

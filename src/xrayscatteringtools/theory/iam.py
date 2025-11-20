@@ -1,5 +1,5 @@
-from xrayscatteringtools.io import read_xyz
-from xrayscatteringtools.utils import element_symbol_to_number
+from ..io import read_xyz, read_mol
+from ..utils import element_symbol_to_number
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline, interp1d
 import pathlib
