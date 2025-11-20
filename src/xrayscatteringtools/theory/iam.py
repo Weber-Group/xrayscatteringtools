@@ -34,7 +34,7 @@ def iam_elastic_pattern(xyzfile, q_arr):
     num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
     coords = np.array(coords)  # Ensure coords is a NumPy array for advanced indexing
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms] # Get atomic numbers using mendeleev
-    scattering_factors_coeffs = np.load(base_path / 'Scattering_Factors.npy', allow_pickle=True)
+    scattering_factors_coeffs = np.load(base_path / 'data/IAM/Scattering_Factors.npy', allow_pickle=True)
     scattering_factors = np.zeros((num_atoms, len(q_arr))) # Preallocation for the structure factor array
     q4pi = q_arr / (4 * np.pi)
     for i, atom in enumerate(atomic_numbers): # Loop all atoms
@@ -92,7 +92,7 @@ def iam_inelastic_pattern(xyzfile, q_arr):
     """
     num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms] # Get atomic numbers using mendeleev
-    compton_factors = np.load(base_path / 'Compton_Factors.npy') # Load the data
+    compton_factors = np.load(base_path / 'data/IAM/Compton_Factors.npy') # Load the data
     q_inelastic = np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1., 1.5, 2., 8., 15.]) * 4*np.pi #These go with the Compton factors array- don't change them unless Compton Array changes.
     inelastic_scattering = np.zeros_like(q_inelastic)
     for atom in atomic_numbers: # Loop through all the atoms
@@ -241,7 +241,7 @@ def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
     num_atoms, _, atoms, coords = read_xyz(xyzfile)
     coords = np.array(coords)
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms]
-    scattering_factors_coeffs = np.load(base_path / 'Scattering_Factors.npy', allow_pickle=True)
+    scattering_factors_coeffs = np.load(base_path / 'data/IAM/Scattering_Factors.npy', allow_pickle=True)
 
     # 2. Create a polar grid of q-vectors in the qx-qy plane
     q_grid, phi_grid = np.meshgrid(q_arr, phi_arr, indexing='ij')

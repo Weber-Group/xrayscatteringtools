@@ -17,7 +17,7 @@ molecule = "SF6"
 method = "HF"
 basis_set = "aug_cc_pVDZ"
 ##################### End User Set Parameters #####################
-h5_filename = f"{molecule}_{method}_{basis_set}.h5"
+h5_filename = f"{molecule}__{method}__{basis_set}.h5"
 
 # Current conversion from a.u. to 1/Angstrom
 conversion_factor = au2invAngstroms(1.0)
