@@ -200,7 +200,7 @@ def azimuthalBinning(
 
     if geomCorr:
         # Solid angle correction.
-        geom_correction = (z_total**3 / r**3)
+        geom_correction = (z_total / r)**3
         # geom_correction /= np.nanmax(geom_correction)
 
     if polCorr:
@@ -270,7 +270,7 @@ def azimuthalBinning(
     radial_indices[mask.ravel()] = 0
 
     # --- 6. Binning and Normalization ---
-    # Create a signle 1D index for each pixels (phi, radial) combination
+    # Create a single 1D index for each pixels (phi, radial) combination
     total_bins = n_phi_bins * n_radial_bins
     combined_indices = np.ravel_multi_index((phi_indices, radial_indices), (n_phi_bins, n_radial_bins))
 
