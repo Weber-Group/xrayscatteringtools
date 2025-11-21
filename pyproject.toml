@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xrayscatteringtools"
-version = "0.1.1"
+version = "0.2.0"
 description = "A library for gas phase analysis at the CXI endstation"
 authors = [
     { name = "David Romano", email = "david_j_romano@brown.edu" }
