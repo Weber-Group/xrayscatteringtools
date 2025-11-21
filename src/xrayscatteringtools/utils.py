@@ -200,8 +200,8 @@ def azimuthalBinning(
 
     if geomCorr:
         # Solid angle correction.
-        geom_correction = (z_total**2 / r**3)
-        geom_correction /= np.nanmax(geom_correction)
+        geom_correction = (z_total**3 / r**3)
+        # geom_correction /= np.nanmax(geom_correction)
 
     if polCorr:
         # Polarization or Thompson correction. This is a mixing term, not just a pure polarization correction.
