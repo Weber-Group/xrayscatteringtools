@@ -172,7 +172,7 @@ def is_leaf(dataset):
     """
     return isinstance(dataset, h5py.Dataset)
 
-def get_leaves(f, saveto, verbose=False):
+def get_leaves(f, saveto=None, verbose=False):
     """Retrieve all leaf datasets from an HDF5 file and save them to a dictionary.
 
     Parameters
@@ -193,7 +193,8 @@ def get_leaves(f, saveto, verbose=False):
         if is_leaf(f[name]):
             if verbose:
                 print(name, f[name][()].shape)
-            saveto[name] = f[name][()]
+            if saveto is not None:
+                saveto[name] = f[name][()]
     f.visit(return_leaf)
 
 def get_data_paths(run_numbers, config_path='config.yaml'):

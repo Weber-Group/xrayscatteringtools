@@ -10,8 +10,7 @@
 ### `plotting` has anything to do with plotting.
 
 ### List of all methods:
-All methods have full docstrings in the NumPy docstring standard.
-Proper namespaces have yet to be defined. Some of these functions can remain internal, and the more useful ones can be defined at the surface level.
+All methods should have full docstrings in the NumPy docstring standard.
 * calib
   * geometry_calibration
     - run_geometry_calibration()
