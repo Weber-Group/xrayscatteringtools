@@ -1,22 +1,52 @@
-from xrayscatteringtools.io import read_xyz
-from xrayscatteringtools.utils import element_symbol_to_number
+from ..io import read_xyz, read_mol
+from ..utils import element_symbol_to_number
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline, interp1d
 import pathlib
 import xraylib
 from scipy.constants import physical_constants
+import types
 
 base_path = pathlib.Path(__file__).parent
 
-def iam_elastic_pattern(xyzfile, q_arr):
+def _iam_loader(system):
+    """
+    Helper function to extract atomic data from various input types.
+
+    Parameters
+    ----------
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
+
+    Returns
+    -------
+    num_atoms : int
+        Number of atoms in the system.
+    atoms : list of str
+        List of atomic symbols.
+    coords : ndarray
+        Array of atomic coordinates with shape (num_atoms, 3).
+    """
+    if isinstance(system,str):
+        if system.endswith('.xyz'):
+            num_atoms, _, atoms, coords = read_xyz(system) # Load the data
+        elif system.endswith('.mol'):
+            _, _, _, num_atoms, _, atoms, coords, _, _, = read_mol(system)
+    elif isinstance(system,types.SimpleNamespace):
+        num_atoms = len(system.atoms)
+        coords = system.geometry
+        atoms = system.atoms
+    return num_atoms, atoms, coords        
+
+def iam_elastic_pattern(system, q_arr):
     """
     Compute the elastic (coherent) X-ray scattering intensity (Debye scattering) 
     for a molecule or atomic cluster.
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing the atomic coordinates and element symbols.
+    system : str or Path to xyz file or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         Array of momentum transfer values (q) at which to evaluate the scattering intensity.
 
@@ -31,10 +61,11 @@ def iam_elastic_pattern(xyzfile, q_arr):
     - Includes both atomic self-scattering and molecular interference terms.
     - The molecular interference term is calculated using the Debye formula with np.sinc.
     """
-    num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
+    num_atoms, atoms, coords = _iam_loader(system)
+    
     coords = np.array(coords)  # Ensure coords is a NumPy array for advanced indexing
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms] # Get atomic numbers using mendeleev
-    scattering_factors_coeffs = np.load(base_path / 'Scattering_Factors.npy', allow_pickle=True)
+    scattering_factors_coeffs = np.load(base_path / 'data/IAM/Scattering_Factors.npy', allow_pickle=True)
     scattering_factors = np.zeros((num_atoms, len(q_arr))) # Preallocation for the structure factor array
     q4pi = q_arr / (4 * np.pi)
     for i, atom in enumerate(atomic_numbers): # Loop all atoms
@@ -67,15 +98,15 @@ def iam_elastic_pattern(xyzfile, q_arr):
 
     return elastic_pattern
 
-def iam_inelastic_pattern(xyzfile, q_arr):
+def iam_inelastic_pattern(system, q_arr):
     """
     Compute the inelastic (Compton) X-ray scattering intensity for a molecule 
     or atomic cluster.
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing the atomic coordinates and element symbols.
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         Array of momentum transfer values (q) at which to evaluate the scattering intensity.
 
@@ -90,9 +121,10 @@ def iam_inelastic_pattern(xyzfile, q_arr):
     - Interpolation is performed using `InterpolatedUnivariateSpline` to return values at the requested q points.
     - The q grid in the Compton factors is fixed; changing it requires updating the array.
     """
-    num_atoms, _, atoms, coords = read_xyz(xyzfile) # Load the data
+    # Getting data from the source
+    num_atoms, atoms, coords = _iam_loader(system)
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms] # Get atomic numbers using mendeleev
-    compton_factors = np.load(base_path / 'Compton_Factors.npy') # Load the data
+    compton_factors = np.load(base_path / 'data/IAM/Compton_Factors.npy') # Load the data
     q_inelastic = np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1., 1.5, 2., 8., 15.]) * 4*np.pi #These go with the Compton factors array- don't change them unless Compton Array changes.
     inelastic_scattering = np.zeros_like(q_inelastic)
     for atom in atomic_numbers: # Loop through all the atoms
@@ -100,15 +132,15 @@ def iam_inelastic_pattern(xyzfile, q_arr):
     spline_interp = InterpolatedUnivariateSpline(q_inelastic, inelastic_scattering) # Interpolate the inelastic scattering
     return spline_interp(q_arr) # Return the interpolated inelastic scattering to the desired q values
 
-def iam_total_pattern(xyzfile, q_arr):
+def iam_total_pattern(system, q_arr):
     """
     Compute the total X-ray scattering intensity (elastic + inelastic) 
     for a molecule or atomic cluster.
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing the atomic coordinates and element symbols.
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         Array of momentum transfer values (q) at which to evaluate the scattering intensity.
 
@@ -122,7 +154,7 @@ def iam_total_pattern(xyzfile, q_arr):
     - Combines the outputs of `iam_elastic_pattern` and `iam_inelastic_pattern`.
     - Useful for simulating the full scattering signal from a molecular system.
     """
-    return iam_elastic_pattern(xyzfile, q_arr) + iam_inelastic_pattern(xyzfile, q_arr)
+    return iam_elastic_pattern(system, q_arr) + iam_inelastic_pattern(system, q_arr)
 
 def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.linspace(0,100,2000)):
     """
@@ -212,7 +244,7 @@ def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.lin
         return compton_spectrum[0]
     return compton_spectrum
 
-def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
+def iam_elastic_pattern_oriented(system, q_arr, phi_arr):
     """
     Computes the elastic X-ray scattering pattern for a fixed-orientation molecule
     on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
@@ -222,8 +254,8 @@ def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing atomic coordinates and element symbols.
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
         are the radial coordinates for the output grid.
@@ -238,10 +270,10 @@ def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
         (len(q_arr), len(phi_arr)).
     """
     # 1. Read atomic data
-    num_atoms, _, atoms, coords = read_xyz(xyzfile)
+    num_atoms, atoms, coords = _iam_loader(system)
     coords = np.array(coords)
     atomic_numbers = [element_symbol_to_number(atom) for atom in atoms]
-    scattering_factors_coeffs = np.load(base_path / 'Scattering_Factors.npy', allow_pickle=True)
+    scattering_factors_coeffs = np.load(base_path / 'data/IAM/Scattering_Factors.npy', allow_pickle=True)
 
     # 2. Create a polar grid of q-vectors in the qx-qy plane
     q_grid, phi_grid = np.meshgrid(q_arr, phi_arr, indexing='ij')
@@ -279,7 +311,7 @@ def iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr):
 
     return oriented_pattern
 
-def iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr):
+def iam_inelastic_pattern_oriented(system, q_arr, phi_arr):
     """
     Computes the inelastic (Compton) X-ray scattering pattern for a fixed-orientation molecule
     on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
@@ -289,8 +321,8 @@ def iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr):
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing atomic coordinates and element symbols.
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
         are the radial coordinates for the output grid.
@@ -305,11 +337,11 @@ def iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr):
         (len(q_arr), len(phi_arr)).
     """
 
-    inelastic_pattern = iam_inelastic_pattern(xyzfile, q_arr)  # Get the 1D inelastic pattern
+    inelastic_pattern = iam_inelastic_pattern(system, q_arr)  # Get the 1D inelastic pattern
     oriented_pattern = np.tile(inelastic_pattern[:, np.newaxis], (1, len(phi_arr)))  # Expand to 2D
     return oriented_pattern
 
-def iam_total_pattern_oriented(xyzfile, q_arr, phi_arr):
+def iam_total_pattern_oriented(system, q_arr, phi_arr):
     """
     Computes the total X-ray scattering pattern (elastic + inelastic) for a fixed-orientation molecule
     on a flat, 2D polar grid defined by q (magnitude) and phi (azimuthal angle).
@@ -319,8 +351,8 @@ def iam_total_pattern_oriented(xyzfile, q_arr, phi_arr):
 
     Parameters
     ----------
-    xyzfile : str or Path
-        Path to an XYZ file containing atomic coordinates and element symbols.
+    system : str or xrayscatteringtools.theory.geometries object
+        Path to an XYZ or MOL file containing the atomic coordinates and element symbols, or xrayscatteringtools.theory.geometries object.
     q_arr : array_like
         1D array of momentum transfer magnitudes (q) in inverse Angstroms. These
         are the radial coordinates for the output grid.
@@ -333,5 +365,5 @@ def iam_total_pattern_oriented(xyzfile, q_arr, phi_arr):
         2D array of the total scattering intensity (elastic + inelastic), with shape
         (len(q_arr), len(phi_arr)).
     """
-    return iam_elastic_pattern_oriented(xyzfile, q_arr, phi_arr) + iam_inelastic_pattern_oriented(xyzfile, q_arr, phi_arr)
+    return iam_elastic_pattern_oriented(system, q_arr, phi_arr) + iam_inelastic_pattern_oriented(system, q_arr, phi_arr)
 

@@ -1,5 +1,5 @@
 from scipy.interpolate import InterpolatedUnivariateSpline
-from xrayscatteringtools.utils import q2theta
+from ..utils import q2theta
 import numpy as np
 import pathlib
 _data_path = pathlib.Path(__file__).parent / "data"

@@ -200,8 +200,8 @@ def azimuthalBinning(
 
     if geomCorr:
         # Solid angle correction.
-        geom_correction = (z_total**2 / r**3)
-        geom_correction /= np.nanmax(geom_correction)
+        geom_correction = (z_total / r)**3
+        # geom_correction /= np.nanmax(geom_correction)
 
     if polCorr:
         # Polarization or Thompson correction. This is a mixing term, not just a pure polarization correction.
@@ -270,7 +270,7 @@ def azimuthalBinning(
     radial_indices[mask.ravel()] = 0
 
     # --- 6. Binning and Normalization ---
-    # Create a signle 1D index for each pixels (phi, radial) combination
+    # Create a single 1D index for each pixels (phi, radial) combination
     total_bins = n_phi_bins * n_radial_bins
     combined_indices = np.ravel_multi_index((phi_indices, radial_indices), (n_phi_bins, n_radial_bins))
 
@@ -580,3 +580,66 @@ def _load_J4M():
     return obj
 
 J4M = _load_J4M() 
+
+
+# def lorch_window(Q, Qmax):
+#     """
+#     Calculates the Lorch window function to minimize termination ripples.
+#     L(Q) = sin(pi*Q/Qmax) / (pi*Q/Qmax)
+#     """
+#     # Avoid division by zero at Q=0
+#     x = np.pi * Q / Qmax
+#     L = np.ones_like(Q)
+#     # Get non-zero elements
+#     nz = (Q != 0)
+#     L[nz] = np.sin(x[nz]) / x[nz]
+#     return L
+
+# def compute_G_of_r(Q, S_of_Q, r_min=0.0, r_max=20.0, dr=0.01, use_lorch=True):
+#     """
+#     Computes the Pair Distribution Function G(r) from the structure factor S(Q).
+
+#     Args:
+#         Q (np.ndarray): 1D array of momentum transfer values (Å^-1). Must be non-negative and increasing.
+#         S_of_Q (np.ndarray): Structure factor S(Q), same shape as Q.
+#         r_min (float): Minimum r value for the output grid (Å).
+#         r_max (float): Maximum r value for the output grid (Å).
+#         dr (float): Step size for the r grid (Å).
+#         use_lorch (bool): If True, applies the Lorch window to reduce termination ripples.
+
+#     Returns:
+#         tuple: (r, G) where r is the radial distance array and G is the PDF.
+#     """
+#     # Ensure Q is a sorted numpy array
+#     order = np.argsort(Q)
+#     Q = np.asarray(Q)[order]
+#     S = np.asarray(S_of_Q)[order]
+
+#     # Handle the case where Q does not start at 0
+#     if Q[0] > 0:
+#         # Linear extrapolation to find S(Q=0)
+#         S0 = S[0] + (S[1] - S[0]) * (0 - Q[0]) / (Q[1] - Q[0])
+#         Q = np.concatenate(([0.0], Q))
+#         S = np.concatenate(([S0], S))
+
+#     Qmax = Q.max()
+#     # This is the reduced structure factor, F(Q)
+#     FQ = Q * (S - 1.0)
+
+#     # Apply the window function to smooth the cutoff at Qmax
+#     if use_lorch:
+#         L = lorch_window(Q, Qmax)
+#         FQ = FQ * L
+
+#     # Set up the real-space grid
+#     r = np.arange(r_min, r_max + dr, dr)
+    
+#     # Vectorized numerical integration (Sine Fourier Transform)
+#     # Using broadcasting to create a (nQ, nr) matrix for the integrand
+#     QR = np.outer(Q, r)
+#     integrand = FQ[:, None] * np.sin(QR)
+    
+#     # Trapezoidal rule integration along the Q-axis (axis=0)
+#     G = (2.0 / np.pi) * np.trapz(integrand, Q, axis=0)
+
+#     return r, G

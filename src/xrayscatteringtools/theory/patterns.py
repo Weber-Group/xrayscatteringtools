@@ -1,20 +1,20 @@
 from types import SimpleNamespace
 import h5py
 import pathlib
-from xrayscatteringtools.utils import invAngstroms2au, au2invAngstroms
+from ..utils import invAngstroms2au, au2invAngstroms
 
 # Generally the import names go like 'molecule_method_basisset' Put all available names in __all__. These should match the .h5 files in the data directory.
 __all__ = [
-    'SF6_CCSD_aug_cc_pVDZ',
-    'SF6_MP2_aug_cc_pVDZ',
-    'SF6_HF_aug_cc_pVDZ'
+    'SF6__CCSD__aug_cc_pVDZ',
+    'SF6__MP2__aug_cc_pVDZ',
+    'SF6__HF__aug_cc_pVDZ'
     ]
 def __dir__():
     # Tab completion for IPython
     return sorted(__all__)
 
 
-_data_path = pathlib.Path(__file__).parent / "data"
+_data_path = pathlib.Path(__file__).parent / "data/patterns"
 
 def __getattr__(name):
     if name in __all__:
@@ -52,7 +52,7 @@ def _make_default_obj(f):
 
 def _make_default_docstring(obj):
     """
-    Generate a default docstring for a data object if created by tests/convert_ab_initio_to_h5.py
+    Generate a default docstring for a data object if created by tests\\convert_ab_initio_to_h5.py
 
     Parameters
     ----------

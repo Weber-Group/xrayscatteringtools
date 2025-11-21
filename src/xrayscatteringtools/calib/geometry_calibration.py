@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 from scipy.optimize import curve_fit
-from xrayscatteringtools.utils import theta2q
-from xrayscatteringtools.calib.scattering_corrections import correction_factor
+from ..utils import theta2q
+from .scattering_corrections import correction_factor
 
 def run_geometry_calibration(
         raw_image,

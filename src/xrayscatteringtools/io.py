@@ -1,10 +1,9 @@
 import numpy as np
 import h5py
-from tqdm.auto import tqdm
-from xrayscatteringtools.epicsArch import EpicsArchive
+from .epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 import yaml
-from xrayscatteringtools.utils import element_number_to_symbol
+from .utils import element_number_to_symbol
 
 def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
     """
@@ -55,6 +54,7 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         If multiple folders are provided but the number of folders does not match
         the number of run numbers.
     """
+    from tqdm.auto import tqdm # Lazy
     # Ensure runNumbers is a list
     if not isinstance(runNumbers, (list, tuple)):
         runNumbers = [runNumbers]
@@ -172,7 +172,7 @@ def is_leaf(dataset):
     """
     return isinstance(dataset, h5py.Dataset)
 
-def get_leaves(f, saveto, verbose=False):
+def get_leaves(f, saveto=None, verbose=False):
     """Retrieve all leaf datasets from an HDF5 file and save them to a dictionary.
 
     Parameters
@@ -193,7 +193,8 @@ def get_leaves(f, saveto, verbose=False):
         if is_leaf(f[name]):
             if verbose:
                 print(name, f[name][()].shape)
-            saveto[name] = f[name][()]
+            if saveto is not None:
+                saveto[name] = f[name][()]
     f.visit(return_leaf)
 
 def get_data_paths(run_numbers, config_path='config.yaml'):
@@ -333,3 +334,110 @@ def write_xyz(filename, comment, atoms, coords):
         f.write(f"{comment}\n")
         for atom, (x, y, z) in zip(atoms, coords):
             f.write(f"{atom} {x:.6f} {y:.6f} {z:.6f}\n")
+
+def read_mol(filename):
+    """
+    Read a molecular structure from a MOL file (MDL Molfile format).
+
+    Parameters
+    ----------
+    filename : str
+        Path to the MOL file to be read.
+
+    Returns
+    -------
+    molecule_name : str
+        Name of the molecule (first line of the file).
+    program_info : str
+        Program/user information (second line).
+    comment : str
+        Comment line (third line).
+    num_atoms : int
+        Number of atoms in the molecule.
+    num_bonds : int
+        Number of bonds in the molecule.
+    atoms : list of str
+        List of atomic symbols for each atom.
+    coords : list of tuple of float
+        Cartesian coordinates of each atom as (x, y, z) in Angstroms.
+    bonds : list of tuple of int
+        List of bonds as (atom1_index, atom2_index, bond_type).
+        Atom indices are 1-based as in the MOL file.
+        Bond types: 1=single, 2=double, 3=triple, 4=aromatic.
+    properties : dict
+        Additional properties from the atom and bond blocks.
+        - 'atom_properties': list of dicts with mass_diff, charge, stereo_parity, etc.
+        - 'bond_properties': list of dicts with stereo, topology, etc.
+
+    Notes
+    -----
+    The MOL file format (V2000) is expected to have:
+    1. Line 1: Molecule name
+    2. Line 2: Program/user info and timestamp
+    3. Line 3: Comment
+    4. Line 4: Counts line (atoms, bonds, etc.)
+    5. Atom block: one line per atom with coordinates and properties
+    6. Bond block: one line per bond
+    7. Properties block (optional)
+    """
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    
+    # Header block (first 3 lines)
+    molecule_name = lines[0].strip()
+    program_info = lines[1].strip()
+    comment = lines[2].strip()
+    
+    # Counts line (line 4)
+    counts_line = lines[3]
+    num_atoms = int(counts_line[0:3].strip())
+    num_bonds = int(counts_line[3:6].strip())
+    
+    # Atom block
+    atoms = []
+    coords = []
+    atom_properties = []
+    
+    for i in range(4, 4 + num_atoms):
+        line = lines[i]
+        x = float(line[0:10].strip())
+        y = float(line[10:20].strip())
+        z = float(line[20:30].strip())
+        element = line[31:34].strip()
+        
+        # Additional atom properties
+        mass_diff = int(line[34:36].strip()) if len(line) > 34 and line[34:36].strip() else 0
+        charge = int(line[36:39].strip()) if len(line) > 36 and line[36:39].strip() else 0
+        
+        atoms.append(element)
+        coords.append((x, y, z))
+        atom_properties.append({
+            'mass_diff': mass_diff,
+            'charge': charge
+        })
+    
+    # Bond block
+    bonds = []
+    bond_properties = []
+    
+    bond_start = 4 + num_atoms
+    for i in range(bond_start, bond_start + num_bonds):
+        line = lines[i]
+        atom1 = int(line[0:3].strip())
+        atom2 = int(line[3:6].strip())
+        bond_type = int(line[6:9].strip())
+        
+        # Additional bond properties
+        stereo = int(line[9:12].strip()) if len(line) > 9 and line[9:12].strip() else 0
+        
+        bonds.append((atom1, atom2, bond_type))
+        bond_properties.append({
+            'stereo': stereo
+        })
+    
+    properties = {
+        'atom_properties': atom_properties,
+        'bond_properties': bond_properties
+    }
+    
+    return molecule_name, program_info, comment, num_atoms, num_bonds, atoms, coords, bonds, properties
