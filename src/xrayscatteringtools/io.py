@@ -230,6 +230,38 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
     >>> get_data_paths([5, 15, 25], 'config.yaml')
     ['/sdf/data/lcls/ds/cxi/cxil', '/sdf/data/lcls/ds/cxi/cxil2', '/sdf/data/lcls/ds/cxi/cxil3']
     """
+    return get_config_for_runs(run_numbers,'data_paths','path',config_path=config_path)
+
+def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
+    """
+    Retrieve configuration values for a specific key based on run number ranges.
+
+    Reads a YAML configuration file specifying run ranges and associated
+    configuration values, returning the values corresponding to the provided key.
+
+    Parameters
+    ----------
+    run_numbers : int or iterable of int
+        Run number(s) for which the configuration values are requested.
+    key : str
+        The configuration key to retrieve values for.
+    subkey : str
+        The subkey within the configuration entries to extract the value from.
+    config_path : str, optional
+        Path to the YAML configuration file (default is 'config.yaml').
+
+    Returns
+    -------
+    list
+        The configuration values corresponding to the specified key.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist.
+    yaml.YAMLError
+        If there is an error parsing the YAML configuration file.
+    """
     # Ensure run_numbers is iterable
     if isinstance(run_numbers, int):
         run_numbers = [run_numbers]
@@ -237,17 +269,16 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    paths = []
+    values = []
     for run in run_numbers:
-        for entry in config['data_paths']:
+        for entry in config[key]:
             lower, upper = entry['runs']
             if lower <= run <= upper:
-                paths.append(entry['path'])
+                values.append(entry[subkey])
                 break
         else:
-            raise ValueError(f"No data path found for run number: {run}")
-
-    return paths
+            raise ValueError(f"No {key}/{subkey} value found for run number: {run}")
+    return values
 
 def runNumToString(num):
     """Convert a run number to a zero-padded string of length 4.
