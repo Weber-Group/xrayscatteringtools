@@ -1,5 +1,30 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from .utils import J4M
+
+def plot_j4m(f, x=None, y=None, ax=None, shading='auto', *args, **kwargs):
+    """Plot Jungfrau 4M detector counts with saved detector data.
+
+    Parameters
+    ----------
+    f : np.ndarray
+        2D array (8 x 512 x 1024) of detector counts for each tile.
+    x, y : np.ndarray, optional
+        Coordinates for each tile of the detector. If None, saved coordinates are used and plotted with plot_jungfrau.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, uses current axes.
+    shading : str, optional
+        Shading style for pcolormesh (default: 'auto').
+
+    Returns
+    -------
+    pcm : matplotlib.collections.QuadMesh
+        The QuadMesh object created.
+    """
+    if x is None or y is None:
+        x = J4M.x
+        y = J4M.y
+    return plot_jungfrau(y, -x, f, ax=ax, shading=shading, *args, **kwargs)
 
 def plot_jungfrau(x, y, f, ax=None, shading='auto', *args, **kwargs):
     """Plot Jungfrau detector counts.
