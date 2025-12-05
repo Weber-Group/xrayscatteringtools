@@ -562,7 +562,7 @@ def rotate_molecule(coords, alpha, beta, gamma):
     return rotated_coords
 
 def _load_J4M():
-    file_path = _data_path / "Jungfrau.h5"
+    file_path = _data_path / "Jungfrau4M.h5"
     with h5py.File(file_path, "r") as f:
         # Load all datasets into memory
         data = {k: f[k][()] for k in f.keys()}
@@ -576,6 +576,10 @@ def _load_J4M():
             Pixel x-coordinates in microns.
         y : ndarray of shape (8, 512, 1024)
             Pixel y-coordinates in microns.
+        line_mask : Boolean ndarray of shape (8, 512, 1024)
+            Line mask for the detector.
+        t_mask : Boolean ndarray of shape (8, 512, 1024)
+            T-mask for the detector.
         """
     return obj
 
