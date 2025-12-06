@@ -232,6 +232,33 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
     """
     return get_config_for_runs(run_numbers,'data_paths','path',config_path=config_path)
 
+def get_config(key, config_path='config.yaml'):
+    """
+    Retrieve configuration values for a specific key from a YAML configuration file.
+
+    Parameters
+    ----------
+    key : str
+        The configuration key to retrieve values for.
+    config_path : str, optional
+        Path to the YAML configuration file (default is 'config.yaml').
+
+    Returns
+    -------
+    list
+        The configuration values corresponding to the specified key.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist.
+    yaml.YAMLError
+        If there is an error parsing the YAML configuration file.
+    """
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    return config[key]
+
 def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
     """
     Retrieve configuration values for a specific key based on run number ranges.
