@@ -562,7 +562,7 @@ def rotate_molecule(coords, alpha, beta, gamma):
     return rotated_coords
 
 def _load_J4M():
-    file_path = _data_path / "Jungfrau.h5"
+    file_path = _data_path / "Jungfrau4M.h5"
     with h5py.File(file_path, "r") as f:
         # Load all datasets into memory
         data = {k: f[k][()] for k in f.keys()}
@@ -576,10 +576,54 @@ def _load_J4M():
             Pixel x-coordinates in microns.
         y : ndarray of shape (8, 512, 1024)
             Pixel y-coordinates in microns.
+        line_mask : Boolean ndarray of shape (8, 512, 1024)
+            Line mask for the detector.
+        t_mask : Boolean ndarray of shape (8, 512, 1024)
+            T-mask for the detector.
         """
     return obj
 
 J4M = _load_J4M() 
+
+def compress_ranges(nums):
+    """
+    Compress a sequence of integers into a compact range string.
+
+    Given an iterable of integers, return a comma-separated string where
+    consecutive runs are represented as "start-end" and single values are
+    represented as the value itself.
+
+    Parameters
+    ----------
+    nums : iterable
+        Iterable of integers (may be unsorted and may contain duplicates).
+
+    Returns
+    -------
+    str
+        Comma-separated representation of ranges, e.g. "1-3,5,7-9".
+
+    Notes
+    -----
+    - An empty input raises an IndexError (matching previous behavior when
+      called with an empty list would have raised).
+    """
+    nums_sorted = sorted(set(nums))
+    if not nums_sorted:
+        raise IndexError("compress_ranges() arg is an empty sequence")
+
+    parts = []
+    start = prev = nums_sorted[0]
+
+    for x in nums_sorted[1:]:
+        if x == prev + 1:
+            prev = x
+            continue
+        parts.append(str(start) if start == prev else f"{start}-{prev}")
+        start = prev = x
+
+    parts.append(str(start) if start == prev else f"{start}-{prev}")
+    return ",".join(parts)
 
 
 # def lorch_window(Q, Qmax):
