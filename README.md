@@ -1,76 +1,81 @@
-# xrayscatteringtools
+# X-Ray Scattering Tools
 
-## A python library for the analysis of data from the CXI endstation at the LCLS. 
+`xrayscatteringtools` is a Python library designed for advanced X-ray scattering data analysis. It provides tools for data processing, visualization, calibration, and theoretical modeling. Specifically, it works alongside the [CXI-Template](https://github.com/Weber-Group/CXI-Template) repository for analyzing data from the Linac Coherent Light Source Coherent X-ray Imaging hutch.
 
-### `calib` submodule pertains to the geometry calibration routine
+## Features
 
-### `theory` submodule pertains to stored ab initio patterns, iam, or geometries.
-### `utils` has a bunch of useful functions in it
-### `xrayscatteringtools.io` has anything pertaning to loading or writing data (`combineRuns` is in here)
-### `plotting` has anything to do with plotting.
+- **Data I/O**: Read and write various data formats, including `.xyz` and `.mol` files, and handle experimental data stored in HDF5.
+- **Visualization**: Generate plots for detector data.
+- **Calibration**: Perform geometry calibration and create masks for X-ray scattering experiments.
+- **Theoretical Modeling**: Compute scattering patterns using theoretical models and atomic data.
+- **Utilities**: A collection of helper functions for unit conversions, azimuthal binning, and more.
 
-### List of all methods:
-All methods should have full docstrings in the NumPy docstring standard.
-* calib
-  * geometry_calibration
-    - run_geometry_calibration()
-    - model()
-    - thompson_correction()
-    - geometry_correction()
-    - geometry_correction_units()
-  * scattering_corrections
-    - correction_factor()
-    - Si_correction()
-    - KaptonHN_correction()
-    - Al_correction()
-    - Be_correction()
-    - cell_correction()
-    - Si_attenuation_length()
-    - Al_attenuation_length()
-    - Be_attenuation_length()
-    - KaptonHN_attenuation_length()
-    - Zn_attenuation_length()
-    - J4M_efficiency()
-* theory
-  * iam
-    - iam_elastic_pattern()
-    - iam_inelastic_pattern()
-    - iam_total_pattern()
-    - iam_compton_spectrum()
-    - iam_elastic_pattern_oriented()
-    - iam_inelastic_pattern_oriented()
-    - iam_total_pattern_oriented()
-  * patterns
-    - SF6__CCSD__aug_cc_pVDZ
-    - SF6__HF__aug_cc_pVDZ
-    - SF6__MP2__aug_cc_pVDZ
-  * geometries
-    - SF6__CCSD_T_DHK__aug_cc_pV5Z_DK 
-* io
-  - combineRuns()
-  - get_tree()
-  - is_leaf()
-  - get_leaves()
-  - get_data_paths()
-  - runNumToString()
-  - read_xyz()
-  - write_xyz()
-  - read_mol()
-* plotting
-  - plot_jungfrau()
-  - compute_pixel_edges()
-* utils
-  - enable_underscore_cleanup()
-  - azimuthalBinning()
-  - au2invAngstroms()
-  - invAngstroms2au()
-  - keV2Angstroms()
-  - Angstroms2keV()
-  - q2theta()
-  - theta2q()
-  - element_symbol_to_number()
-  - element_number_to_symbol()
-  - translate_molecule()
-  - rotate_molecule()
-  - J4M()
-  - 
+---
+
+## Installation
+
+To install the latest version, use pip:
+```bash
+pip install xrayscatteringtools
+```
+
+or install manually
+```bash
+git clone https://github.com/Weber-Group/xrayscatteringtools.git
+cd xrayscatteringtools
+pip install -r requirements.txt
+```
+
+---
+
+## Modules Overview
+
+### 1. `xrayscatteringtools.io`
+Handles data input and output operations:
+- **Key Functions**:
+  - `combineRuns`: Combine data from multiple experimental runs.
+  - `read_xyz`, `write_xyz`: Read and write `.xyz` files.
+  - `get_data_paths`: Retrieve paths to data files.
+  - `get_config`: Load configuration files for experiments.
+
+### 2. `xrayscatteringtools.plotting`
+Provides tools for visualizing X-ray scattering data:
+- **Key Functions**:
+  - `plot_j4m`: Plot Jungfrau 4M detector data.
+
+### 3. `xrayscatteringtools.utils`
+A collection of utility functions:
+- **Key Functions**
+  - Unit conversions, azimuthal binning, transformations, ipython ease-of-use.
+
+### 4. `xrayscatteringtools.calib`
+Tools for calibration and masking:
+- **Submodules**:
+  - `geometry_calibration`: Perform geometry calibration using theoretical scattering patterns.
+  - `masking`: Create and manage masks for X-ray scattering data.
+  - `scattering_corrections`: Compute correction factors for scattering experiments.
+
+### 5. `xrayscatteringtools.theory`
+Theoretical modeling of X-ray scattering:
+- **Submodules**:
+  - `geometries`: Load and manage molecular geometries from HDF5 files.
+  - `iam`: Compute elastic X-ray scattering patterns using the Independent Atom Model (IAM).
+  - `patterns` : Load and manage _ab initio_ scattering data from HDF5 files.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request with your changes.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+---
+
+## Acknowledgments
+
+This library was created by David J. Romano and developed by collaborators to facilitate X-ray scattering research.
