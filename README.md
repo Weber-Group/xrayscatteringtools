@@ -1,6 +1,6 @@
 # X-Ray Scattering Tools
 
-`xrayscatteringtools` is a Python library designed for advanced X-ray scattering data analysis. It provides tools for data processing, visualization, calibration, and theoretical modeling. Specifically, it works alongside the [CXI-Template](https://github.com/Weber-Group/CXI-Template) repository for analyzing data from the Linac Coherent Light Source Coherent X-ray Imaging hutch.
+`xrayscatteringtools` is a Python library designed for advanced X-ray scattering data analysis. It provides tools for data processing, visualization, calibration, and theoretical modeling. Specifically, it works alongside the [CXI-Template](https://github.com/Weber-Group/CXI-Template) repository for analyzing data from the Linac Coherent Light Source's Coherent X-ray Imaging hutch.
 
 ## Features
 
@@ -78,4 +78,4 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Acknowledgments
 
-This library was created by David J. Romano and developed by collaborators to facilitate X-ray scattering research.
+This library was created by [David J. Romano](https://www.linkedin.com/in/david-romano-231124196) based of compiling and standardizing code from previous data analysis piplines. Maintained by the [Weber Research Group](https://sites.brown.edu/weber-lab/) and developed by collaborators to facilitate X-ray scattering research.
