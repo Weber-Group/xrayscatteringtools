@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from ..plotting import plot_j4m
 import psana
 from tqdm.auto import tqdm
+import os
 
 
 class mask_maker(object):
@@ -487,11 +488,12 @@ class mask_maker(object):
         # Making the file name and path
         if mask_directory is None:
             mask_directory = f'/sdf/data/lcls/ds/cxi/{self.experiment}/calib/Jungfrau::CalibV1/CxiDs1.0:Jungfrau.0/pixel_mask/'
+        # Ensure the directory exists in a race-free manner
+        os.makedirs(mask_directory, exist_ok=True)
         mask_filename = f'{valid_from_run}-end.data'
 
-        # Creating datasource object, detector object, and saving the mask
-        ds = psana.DataSource(f'exp={self.experiment}:run={self.dark_run_number}')
+        # Creating detector object and saving the mask
         det = psana.Detector('jungfrau4M')
-        det.save_txtnda(mask_directory+mask_filename, self.cmask.astype(float), fmt='%d', addmetad=True)
-        print(f'Saved combined mask to {mask_directory+mask_filename}')
+        det.save_txtnda(os.path.join(mask_directory, mask_filename), self.cmask.astype(float), fmt='%d', addmetad=True)
+        print(f'Saved combined mask to {os.path.join(mask_directory, mask_filename)}')
         pass
