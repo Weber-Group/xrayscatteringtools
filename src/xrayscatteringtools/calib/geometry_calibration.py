@@ -2,7 +2,7 @@ import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 from scipy.optimize import curve_fit
 from ..utils import theta2q
-from .scattering_corrections import correction_factor
+from .scattering_corrections import correction_factor, KaptonHN_correction, Si_correction
 
 def run_geometry_calibration(
         raw_image,
@@ -113,8 +113,8 @@ def model(
         do_thompson_correction=True,
         do_angle_of_scattering_correction=True,
         do_geometry_correction_units=False,
-        dx=75,
-        dy=75
+        dx=50,
+        dy=50
         ):
     """
     Calculate the theoretical detector image for given geometry parameters.
@@ -171,7 +171,9 @@ def model(
     if do_geometry_correction:
         corrections *= geometry_correction(centered_x, centered_y, z0) # Geometry
     if do_angle_of_scattering_correction:
-        corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
+        # corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
+        corrections *= KaptonHN_correction(q_matrix, photon_energy_keV, tK=1e-3)
+        corrections *= Si_correction(q_matrix, photon_energy_keV, tSi=50e-6)
     if do_geometry_correction_units:
         corrections *= geometry_correction_units(centered_x, centered_y, z0, dx, dy) # Geometry correctly accounting for solid angle subtension per pixel
     fit = amplitude * theory_interpolation(q_matrix) * corrections

@@ -299,6 +299,229 @@ def azimuthalBinning(
 
     return np.squeeze(radial_centers), np.squeeze(azimuthal_average)
 
+def make_qmatrix(
+        img,
+        x,
+        y,
+        x0 = 0,
+        y0 = 0,
+        z0 = 90000,
+        tx = 0,
+        ty = 0,
+        keV = 10,
+        pPlane = 0,
+        threshADU = [0,np.inf],
+        threshRMS = None,
+        mask = None,
+        qBin = 0.05,
+        rBin = None,
+        phiBins = 1,
+        geomCorr = True,
+        polCorr = True,
+        darkImg = None,
+        gainImg = None,
+        z_off = 0,
+        square = False,
+        debug = False
+    ):
+    """Performs azimuthal binning of a 2D image.
+
+    This function integrates a 2D detector image into a 1D profile as a
+    function of a radial coordinate (either momentum transfer 'q' or
+    real-space radius 'r'). It can perform this integration in multiple
+    azimuthal sectors ('phi'). The geometry of the setup, including detector
+    distance, tilt, and beam center, is taken into account. Optional
+    corrections for polarization are also provided.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        The input image data to be binned.
+    x, y : np.ndarray
+        Arrays of the same shape as `img` representing the pixel
+        x and y coordinates. Default for Jungfrau4M is in micron.
+    x0, y0 : float
+        x and y-coordinates of the beam center in detector coordinates (J4M: micron). Default is 0.
+    z0 : float
+        Sample-to-detector distance in detector coordinates (J4M: micron). Default is 90000.
+    tx, ty : float, optional
+        Detector tilt angles around the y and x axes, respectively, in degrees.
+        Default is 0.
+    kev : float, optional
+        Photon energy of the incident beam in keV. Required for q-space
+        binning. Default is 10.
+    p_plane : {0, 1}, optional
+        The polarization plane of the incident beam.
+        1 for vertical polarization, 0 for horizontal. Default is 0.
+    threshADU : tuple(float, float), optional
+        (min, max) threshold in ADU. Pixel values outside this range are
+        set to 0 for the binning calculation. Default is (0, np.inf).
+    threshRMS : float, optional
+        RMS threshold. Pixel values above this are set to 0. Default is None.
+    mask : np.ndarray, optional
+        A boolean or integer array of the same shape as `img`. A value of
+        True or 1 indicates a pixel to be excluded from the analysis. If none,
+        no pixels are excluded. Default is None.
+    qBin : float or array_like, optional
+        If a float, it's the size of each q-bin in inverse Angstroms (Å⁻¹).
+        If an array, it specifies the bin edges for non-uniform binning.
+        This parameter is ignored if `r_bin` is specified. Default is 0.05 Å⁻¹.
+    rBin : float or array_like, optional
+        If specified, binning is performed in real-space radius 'r' (in pixels)
+        instead of q-space. If a float, it is the bin size. If an array,
+        it specifies the bin edges. Default is None.
+    phiBins : int or array_like, optional
+        If an int, it's the number of uniform azimuthal bins.
+        If an array, it specifies the bin edges in radians for non-uniform
+        azimuthal sectors. Default is 1 (no azimuthal binning).
+    geom_corr : bool, optional
+        If True, apply a geometric (solid angle) correction. Default is True.
+    pol_corr : bool, optional
+        If True, apply a polarization (Thompson) correction. Default is True.
+    dark_img : np.ndarray, optional
+        A dark image to be subtracted from `img`. Default is None.
+    gain_img : np.ndarray, optional
+        A gain/flat-field image to divide `img` by. Default is None.
+    z_off : float or np.ndarray, optional
+        An additional offset along the beam direction (z-axis) in pixels.
+        Default is 0.
+    square : bool, optional
+        If True, the image is squared before binning. Default is False.
+    debug : bool, optional
+        If True, print debugging information. Default is False.
+
+    Returns
+    -------
+    radial_centers : np.ndarray
+        1D array of the center values for each radial bin (either q in Å⁻¹
+        or r in detector coordinates (J4M: micron).
+    azimuthal_average : np.ndarray
+        The binned data. A 2D array of shape (`n_phi_bins`, `n_radial_bins`)
+        or a 1D array if `phi_bins` is 1.
+
+    Notes
+    -----
+    - The geometric and angular calculations are based on the methodology
+      described in J. Chem. Phys. 113, 9140 (2000).
+    - The function preserves the original's specific, non-standard behavior
+      of placing pixels that fall outside the defined bin ranges into the
+      first bin.
+    - The normalization (pixel count per bin) includes all pixels, but the
+      intensity summation only includes unmasked pixels. This matches the
+      original's logic but may affect the normalization of the first bin if
+      a mask is used, as masked pixels are assigned to bin 0 for the count.
+
+    Examples
+    --------
+    >>> radial_centers, azimuthal_average = azimuthalBinning(img, x, y)
+    >>> radial_centers, azimuthal_average = azimuthalBinning(img, x, y, x0=100, y0=150, z0=95000, keV=12.7, qBin=0.02, phiBins=8)
+    """
+
+    # --- 1. Image Preprocessing ---
+    # Apply dark and gain corrections if provided
+    if darkImg is not None:
+        img = img - darkImg
+    if gainImg is not None:
+        img = img / gainImg
+    if square:
+        img = img ** 2
+    threshold_mask = (img < threshADU[0]) | (img > threshADU[1])
+    if threshRMS is not None:
+        threshold_mask |= (img > threshRMS)
+    if mask is None:
+        mask = np.zeros_like(img, dtype=bool)
+    
+    # --- 2. Geometric Transformations ---
+    tx_rad, ty_rad = np.deg2rad(tx), np.deg2rad(ty)
+    z_total = z0 + z_off
+
+    # Geometric parameters from J Chem Phys 113, 9140 (2000)
+    A = -np.sin(ty_rad) * np.cos(tx_rad)
+    B = -np.sin(tx_rad)
+    C = -np.cos(ty_rad) * np.cos(tx_rad)
+    a = x0 + z_total * np.tan(ty_rad)
+    b = y0 - z_total * np.tan(tx_rad)
+    c = z_total
+
+
+    # Transforming (x,y) to r, theta, phi
+    r = np.sqrt((x - a) ** 2 + (y - b) ** 2 + c ** 2)
+    matrix_theta = np.arccos((A * (x - a) + B * (y - b) - C * c) / r)
+    with np.errstate(invalid='ignore'):
+        matrix_phi = np.arccos(
+                ((A**2 + C**2) * (y - b) - A * B * (x - a) + B * C * c)
+                / np.sqrt((A**2 + C**2) * (r**2 - (A * (x - a) + B * (y - b) - C * c) ** 2))
+            )
+    
+    # Correct NaN values and wrap phi to [0, 2pi]
+    matrix_phi[(y >= y0) & (np.isnan(matrix_phi))] = 0
+    matrix_phi[(y < y0) & (np.isnan(matrix_phi))] = np.pi
+    matrix_phi[x < x0] = 2 * np.pi - matrix_phi[x < x0]
+
+    # --- 3 Correction Factor Calculations ---
+    # Default to ones if no correction is applied
+    geom_correction = np.ones_like(img, dtype=float)
+    pol_correction = np.ones_like(img, dtype=float)
+
+    if geomCorr:
+        # Solid angle correction.
+        geom_correction = (z_total / r)**3
+        # geom_correction /= np.nanmax(geom_correction)
+
+    if polCorr:
+        # Polarization or Thompson correction. This is a mixing term, not just a pure polarization correction.
+        Pout = 1 - pPlane    
+        pol_correction = Pout * (
+            1 - (np.sin(matrix_phi) * np.sin(matrix_theta)) ** 2
+        ) + pPlane * (1 - (np.cos(matrix_phi) * np.sin(matrix_theta)) ** 2)
+
+    correction = geom_correction * pol_correction
+
+    # --- 4. Binning Setup ---
+    # Azimuthal, (phi) binning
+    if isinstance(phiBins, (list, np.ndarray)):
+        phi_edges = np.sort(np.asarray(phiBins))
+        # Ensure range is fully covered for dgitization
+        if phi_edges.max() < (2 * np.pi - 0.01):
+            phi_edges = np.append(phi_edges, phi_edges.max() + 0.001)
+        if phi_edges.min() > 0:
+            phi_edges = np.insert(phi_edges, 0, phi_edges.min() - 0.001)
+        n_phi_bins = len(phi_edges) - 1
+    else:
+        n_phi_bins = phiBins
+        phi_min, phi_max = np.nanmin(matrix_phi), np.nanmax(matrix_phi)
+        phi_edges = np.linspace(phi_min, phi_max, n_phi_bins + 1)
+
+    # Radial (q or r) binning
+    if rBin is not None:
+        # Binning in real-space radius (r)
+        radial_map = np.sqrt((x - x0) ** 2 + (y - y0) ** 2)
+        r_min = np.nanmin(radial_map[~mask])
+        r_max = np.nanmax(radial_map[~mask])
+
+        if np.isscalar (rBin):
+            if debug: print("r-bin size given: rmax: ", r_max, " rBin ", rBin)
+            radial_edges = np.arange(r_min - rBin, r_max + rBin, rBin)
+        else:
+            radial_edges = np.asarray(rBin)
+        radial_centers = (radial_edges[:-1] + radial_edges[1:]) / 2
+        n_radial_bins = len(radial_centers)
+    else:
+        # Binning in reciprocal space (q)
+        lam = keV2Angstroms(keV)
+        radial_map = 4 * np.pi / lam * np.sin(matrix_theta / 2)
+        q_min = np.nanmin(radial_map[~mask])
+        q_max = np.nanmax(radial_map[~mask])
+
+        if np.isscalar(qBin):
+            if debug: print("q-bin size given: qmax: ", q_max, " qBin ", qBin)
+            radial_edges = np.arange(0, q_max + qBin, qBin)
+        else:
+            radial_edges = np.asarray(qBin)
+        radial_centers = (radial_edges[:-1] + radial_edges[1:]) / 2
+        n_radial_bins = len(radial_centers)
+    return radial_map, matrix_phi
+
 def au2invAngstroms(au):
     """
     Convert momentum transfer from atomic units (a.u., 1/Bohr) to inverse Angstroms (Å⁻¹).
@@ -585,6 +808,26 @@ def _load_J4M():
 
 J4M = _load_J4M() 
 
+def _load_OCTAL():
+    file_path = _data_path / "OctalMPCCD.h5"
+    with h5py.File(file_path, "r") as f:
+        # Load all datasets into memory
+        data = {k: f[k][()] for k in f.keys()}
+        obj = SimpleNamespace(**data)
+        obj.__doc__ = """
+        Octal MPCCD constant properties.
+
+        Attributes
+        ----------
+        x : ndarray of shape (2399, 2399)
+            Pixel x-coordinates in microns.
+        y : ndarray of shape (2399, 2399)
+            Pixel y-coordinates in microns.
+        """
+    return obj
+
+OCTAL = _load_OCTAL()
+
 def compress_ranges(nums):
     """
     Compress a sequence of integers into a compact range string.
@@ -624,6 +867,22 @@ def compress_ranges(nums):
 
     parts.append(str(start) if start == prev else f"{start}-{prev}")
     return ",".join(parts)
+
+def createBinsFromCenters(centers):
+    bins = []
+    nc = centers.size
+    for idx,c in enumerate(centers):
+        if idx == 0:
+            dc = np.abs( c - centers[idx+1])/2.
+            bins.append(c-dc)
+            bins.append(c+dc)
+        elif idx == nc-1:
+            dc = np.abs( c - centers[idx-1])/2.
+            bins.append(c+dc)
+        else:
+            dc = np.abs( c - centers[idx+1])/2.
+            bins.append(c+dc)
+    return np.sort(np.array(bins))
 
 
 # def lorch_window(Q, Qmax):

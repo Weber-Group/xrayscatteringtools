@@ -5,7 +5,64 @@ from scipy.interpolate import interp1d
 import yaml
 from .utils import element_number_to_symbol
 
-def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
+def combine_cubedata(runNumbers,path,prefix='cubeRun_',suffix='',verbose=False):
+    # global cubedata, cubedata0
+    from tqdm.auto import tqdm # Lazy
+    if not isinstance(runNumbers, (list, tuple)):
+        runNumbers = [runNumbers]
+
+    # Preallocation
+    cube_sums = []
+    for i, num in enumerate(tqdm(runNumbers)):
+        if i==0:
+            # Just the first run that is loaded in, we do this routine
+            with h5py.File(f'{path}{prefix}{num}{suffix}.h5','r') as f:
+                for key in f:
+                    if verbose:
+                        print(key)
+                ts = f['scan_step'][()]
+                tbin_counts = f['event_count'][()]
+                cubedata = f['time_binned_image'][()]
+                if 'laseroff_image' not in f:
+                    laseroff_counts = tbin_counts[0]
+                    laseroff_data = cubedata[0]
+                else:
+                    laseroff_counts = f['laseroff_count'][()]
+                    laseroff_data = f['laseroff_image'][()]
+                    # cubedata[np.isnan(np.mean(cubedata,axis=(-1,-2)))] = np.zeros_like(cubedata[0])
+                    # tbin_counts = tbin_counts*(~np.isnan(np.mean(cubedata,axis=(-1,-2)))).astype(int)
+                cube_sums.append(np.sum(cubedata))
+        # Everything else is different
+        else:
+            with h5py.File(f'{path}{prefix}{num}{suffix}.h5','r') as f:
+                ts0 = f['scan_step'][()]
+                tbin_counts0 = f['event_count'][()]
+                cubedata0 = f['time_binned_image'][()]
+                if 'laseroff_image' not in f:
+                    laseroff_counts0 = tbin_counts[0]
+                    laseroff_data0 = cubedata[0]
+                else:
+                    laseroff_counts0 = f['laseroff_count'][()]
+                    laseroff_data0 = f['laseroff_image'][()]
+            if not np.array_equal(np.unique(ts),np.unique(np.concatenate((ts,ts0)))):
+                raise Exception('timebins do not match')
+            # weights = np.sum(cubedata,axis=(-1,-2))*tbin_counts
+            # weights0 = np.sum(cubedata0,axis=(-1,-2))*tbin_counts0
+            # weighted_cubedata, weighted_cubedata0 = weights*cubedata.T, weights0*cubedata0.T
+            # nanmask = np.isnan(np.mean(cubedata0,axis=(-1,-2)))
+            # weights0[nanmask] = 0
+            # cubedata0[nanmask] = np.zeros_like(cubedata[0])
+            # cubedata = (((weights*cubedata.T+weights0*cubedata0.T)/(weights+weights0)).T)[()]
+            cube_sums.append(np.sum(cubedata0))
+            cubedata += cubedata0
+            tbin_counts+=tbin_counts0#*((~nanmask).astype(int))
+            # laseroff_data = (laseroff_data*laseroff_counts+laseroff_data0*laseroff_counts0)/(laseroff_counts+laseroff_counts0)
+            del cubedata0, ts0, tbin_counts0
+            # laseroff_counts+=laseroff_counts0
+        print(f'Run {num} loaded')
+    return ts,tbin_counts,cubedata,laseroff_counts,laseroff_data,cube_sums
+
+def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, keys_to_accumulate, verbose=False, archImport=False):
     """
     Combine data from multiple experimental runs into a single consolidated dataset.
 
