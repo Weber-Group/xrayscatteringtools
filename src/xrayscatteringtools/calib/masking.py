@@ -2,11 +2,11 @@ from ..utils import J4M, azimuthalBinning, keV2Angstroms
 from ..io import combineRuns
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.path import Path
 from ..plotting import plot_j4m
 import psana
 from tqdm.auto import tqdm
 import os
-
 
 class mask_maker(object):
     """
@@ -99,6 +99,7 @@ class mask_maker(object):
         # Initalize masks
         self.dark_mask = np.ones_like(J4M.x)
         self.background_mask = np.ones_like(J4M.x)
+        self.poly_mask = np.ones_like(J4M.x)
         self.sample_mask = np.ones_like(J4M.x)
         self.cmask = np.ones_like(J4M.x)
         return
@@ -274,6 +275,109 @@ class mask_maker(object):
         print(f'Masked percentage from background: {100*(1-np.sum(self.background_mask)/self.background_mask.size):.2f}%')
         return
 
+    def polygon_mask(self, num_points, points=[], plotting=True):
+        """
+        Draw a polygon mask by entering points manually, or by providing a list of points.
+
+        Parameters
+        ----------
+        num_points : int
+            Number of points to define the polygon. Must be greater than 2.
+        points : list of tuples, optional
+            List of (x, y) tuples defining the polygon vertices. Default is empty list.
+        plotting : bool, optional
+            Whether to plot and masks (default is True).
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        If points are not provided, the user will be prompted to enter them one by one,
+        with a plot displayed after each entry for context. The polygon will be automatically
+        closed by connecting the last point back to the first. The mask will keep the region
+        inside the polygon and mask out the outside region. This can be used to manually mask
+        out specific areas of the detector that are not captured by the dark or background masks,
+        such as shadows from the sample environment or other artifacts. If an incomplete list of points is provided,
+        the user will be prompted to enter the remaining points.
+        """
+        # Check to make sure that the number of points is at least 3 to form a polygon'
+        if num_points < 3:
+            raise ValueError("At least 3 points are required to form a polygon.")
+
+        # Reset the mask
+        self.poly_mask = np.ones_like(J4M.x, dtype=bool)
+
+        # Apply dark and background mask to sample average for plotting and masking purposes
+        # Grabbing the data from the sample_data attribute, calculating average
+        sample_num_shots = np.where(self.sample_data['lightStatus/xray'].astype(bool)==True)[0].shape[0]
+        sample_avg = np.array(self.sample_data['Sums/jungfrau4M_calib_xrayOn_thresADU1'] / sample_num_shots)
+        sample_avg_darkbackmask = np.copy(sample_avg)
+        sample_avg_darkbackmask[~(self.dark_mask * self.background_mask)] = np.nan
+        
+        # Init a temp mask for plotting purposes, and a list to store entered points
+        _temp_mask = np.ones_like(self.sample_data, dtype=bool)  # boolean mask for display stacking
+        entered_points = []
+        print('Beginning polygon masking')
+
+        
+        # Loop through the points
+        for pointIdx in range(num_points):
+            # Check if the user provided a list of points and if the current point index is within that list
+            if pointIdx < len(points):
+                # If so, use the provided point and add it to the list of entered points
+                entered_points.append((np.array(points)[pointIdx,0], np.array(points)[pointIdx,1]))
+            # If not, show the current plot and prompt the user to enter the coordinates for the next point
+            else:
+                # Redraw current image and any previously entered points for context
+                plt.figure(figsize=[8,8])
+                plot_j4m(sample_avg_darkbackmask)
+                plt.axis('equal')
+                plt.minorticks_on()
+                plt.grid(True, which='both')
+                plt.title(f'Enter point {pointIdx+1}/{num_points} (x, y)')
+                plt.xlabel('x (mm)')
+                plt.ylabel('y (mm)')
+                if entered_points:
+                    xs, ys = zip(*entered_points)
+                    plt.plot(xs, ys, 'ro-', ms=4, lw=1, label='Entered points')
+                plt.show()
+            
+                # Prompt for coordinates, append to the list
+                x_pt = float(input(f'Enter x-coord of point {pointIdx+1}: '))
+                y_pt = float(input(f'Enter y-coord of point {pointIdx+1}: '))
+                entered_points.append((x_pt, y_pt))
+
+        # At the end we need to inver the points and make the second one negative to match the plotting of plot_j4m
+        entered_points_flipped = [(-y, x) for x, y in entered_points]
+        
+        # Close polygon and build mask
+        verts = np.asarray(entered_points_flipped, dtype=float)
+        verts_closed = np.vstack([verts, verts[0]])  # close loop
+        codes = np.full(len(verts_closed), Path.LINETO, dtype=np.uint8)
+        codes[0] = Path.MOVETO
+        codes[-1] = Path.CLOSEPOLY
+        
+        polygon = Path(verts_closed, codes)
+        grid_pts = np.column_stack([J4M.x.ravel(), J4M.y.ravel()])
+        inside = polygon.contains_points(grid_pts).reshape(J4M.x.shape)
+        
+        # Keep inside region, mask outside
+        self.poly_mask = inside.astype(bool)
+
+        if plotting:
+            # Apply to the sample_avg_darkbackmask visualization
+            sample_avg_darkbackpolymask = np.where(self.poly_mask, sample_avg_darkbackmask, np.nan)
+
+            # Show final masked result
+            plt.figure(figsize=[8,8])
+            plot_j4m(sample_avg_darkbackpolymask)
+            plt.axis('image')
+            plt.title("Masked result (outside polygon set to NaN)")
+            plt.show()
+        return
+
     def process_sample(self, n_std=2, x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0, plotting=True):
         """
         Process the sample data to create a mask based on intensity statistics.
@@ -311,7 +415,7 @@ class mask_maker(object):
         sample_avg = np.array(self.sample_data['Sums/jungfrau4M_calib_xrayOn_thresADU1'] / sample_num_shots)
         # Applying dark and background mask to sample average
         sample_avg_darkbackmask = np.copy(sample_avg)
-        sample_avg_darkbackmask[~(self.dark_mask * self.background_mask)] = np.nan
+        sample_avg_darkbackmask[~(self.dark_mask * self.background_mask * self.poly_mask)] = np.nan
 
         ### Determine q values. Maybe this should be in its own function?
         # --- 2. Geometric Transformations ---
@@ -389,13 +493,13 @@ class mask_maker(object):
             fig2.colorbar(pcm, ax=ax2[0], fraction=0.046, pad=0.04)
             # Plot arcsinh background average with dark mask applied
             pcm = plot_j4m(sample_avg_darkbackmask, ax=ax2[1],cmap='jet',vmin=0)
-            ax2[1].set_title('arcsinh(Dark Masked Bkg Average)')
+            ax2[1].set_title('Drk., Bkg., Poly., Masked Sample Avg')
             ax2[1].set_xticks([])
             ax2[1].set_yticks([])
             fig2.colorbar(pcm, ax=ax2[1], fraction=0.046, pad=0.04)
             # Plot masked background average
             pcm = plot_j4m(sample_avg_backdarksamplemasked, ax=ax2[2],cmap='jet',vmin=0)
-            ax2[2].set_title('Masked Bkg Average')
+            ax2[2].set_title('Drk., Bkg., Poly., Samp. Masked Sample Avg')
             ax2[2].set_xticks([])
             ax2[2].set_yticks([])
             fig2.colorbar(pcm, ax=ax2[2], fraction=0.046, pad=0.04)
@@ -417,7 +521,7 @@ class mask_maker(object):
         -------
         None
         """
-        self.cmask = (self.dark_mask * self.background_mask * self.sample_mask * J4M.line_mask * J4M.t_mask).astype(bool)
+        self.cmask = (self.dark_mask * self.background_mask * self.poly_mask *self.sample_mask * J4M.line_mask * J4M.t_mask).astype(bool)
         if plotting:
             # Grabbing the data from the sample_data attribute, calculating average
             sample_num_shots = np.where(self.sample_data['lightStatus/xray'].astype(bool)==True)[0].shape[0]
@@ -426,7 +530,7 @@ class mask_maker(object):
             sample_avg_combinedmask = np.copy(sample_avg)
             sample_avg_combinedmask[~(self.cmask)] = np.nan
 
-            fig, ax = plt.subplots(ncols=2, nrows=2, figsize=(10, 8))
+            fig, ax = plt.subplots(ncols=2, nrows=3, figsize=(10, 8))
             pcm = plot_j4m(self.dark_mask, ax=ax[0,0],vmin=0, vmax=1)
             ax[0,0].set_title('Dark Mask')
             ax[0,0].set_xticks([])
@@ -447,6 +551,12 @@ class mask_maker(object):
             ax[1,1].set_xticks([])
             ax[1,1].set_yticks([])
             fig.colorbar(pcm, ax=ax[1,1], fraction=0.046, pad=0.04)
+            pcm = plot_j4m(self.poly_mask, ax=ax[2,0],vmin=0, vmax=1)
+            ax[2,0].set_title('Polygon Mask')
+            ax[2,0].set_xticks([])
+            ax[2,0].set_yticks([])
+            fig.colorbar(pcm, ax=ax[2,0], fraction=0.046, pad=0.04)
+            ax[2,1].axis('off')
             plt.show()
 
             fig, ax = plt.subplots(figsize=(10,10))
