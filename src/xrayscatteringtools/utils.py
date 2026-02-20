@@ -35,6 +35,47 @@ def enable_underscore_cleanup():
 
     ipython.events.register('post_run_cell', clean_user_underscore_vars)
 
+def compute_q_map(x, y, x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
+    """Compute the momentum-transfer (*q*) map for a detector pixel grid.
+
+    Geometry follows J. Chem. Phys. 113, 9140 (2000).
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Pixel coordinates in microns (same shape; e.g. ``J4M.x``, ``J4M.y``).
+    x0, y0 : float, optional
+        Beam-centre coordinates in microns.  Default is 0.
+    z0 : float, optional
+        Sample-to-detector distance in microns.  Default is 90 000.
+    tx, ty : float, optional
+        Detector tilt angles in degrees.  Default is 0.
+    keV : float, optional
+        Photon energy in keV.  Default is 10.
+    z_off : float, optional
+        Additional z offset in microns.  Default is 0.
+
+    Returns
+    -------
+    np.ndarray
+        Per-pixel momentum transfer values in inverse Angstroms (same shape
+        as *x* and *y*).
+    """
+    tx_rad, ty_rad = np.deg2rad(tx), np.deg2rad(ty)
+    z_total = z0 + z_off
+
+    A = -np.sin(ty_rad) * np.cos(tx_rad)
+    B = -np.sin(tx_rad)
+    C = -np.cos(ty_rad) * np.cos(tx_rad)
+    a = x0 + z_total * np.tan(ty_rad)
+    b = y0 - z_total * np.tan(tx_rad)
+    c = z_total
+
+    R = np.sqrt((x - a) ** 2 + (y - b) ** 2 + c ** 2)
+    theta = np.arccos((A * (x - a) + B * (y - b) - C * c) / R)
+    lam = keV2Angstroms(keV)
+    return 4 * np.pi / lam * np.sin(theta / 2)
+
 def azimuthalBinning(
         img,
         x,
@@ -243,8 +284,7 @@ def azimuthalBinning(
         n_radial_bins = len(radial_centers)
     else:
         # Binning in reciprocal space (q)
-        lam = keV2Angstroms(keV)
-        radial_map = 4 * np.pi / lam * np.sin(matrix_theta / 2)
+        radial_map = compute_q_map(x, y, x0, y0, z0, tx, ty, keV, z_off)
         q_min = np.nanmin(radial_map[~mask])
         q_max = np.nanmax(radial_map[~mask])
 
