@@ -23,7 +23,8 @@ dependencies = [
     "h5py",
     "requests",
     "xraylib",
-    "pyyaml"
+    "pyyaml",
+    "ruamel.yaml"
 ]
 
 [project.optional-dependencies]
