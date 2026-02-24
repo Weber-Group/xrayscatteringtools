@@ -213,7 +213,7 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
 
     Returns
     -------
-    list of str
+    srt or list of str
         Data directory paths corresponding to each run number.
 
     Raises
@@ -279,7 +279,7 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
 
     Returns
     -------
-    list
+    variable or list
         The configuration values corresponding to the specified key.
 
     Raises
@@ -305,6 +305,10 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
                 break
         else:
             raise ValueError(f"No {key}/{subkey} value found for run number: {run}")
+    # Return scalar if only one value
+    if len(values) == 1:
+        return values[0]
+
     return values
 
 def runNumToString(num):
