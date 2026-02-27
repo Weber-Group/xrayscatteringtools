@@ -111,3 +111,48 @@ def compute_pixel_edges(coord):
     edges[-1,-1] = coord[-1,-1] + 0.5*(coord[-1,-1] - coord[-2,-1]) + 0.5*(coord[-1,-1] - coord[-1,-2])
     
     return edges
+
+def edges_from_centers(centers):
+    """
+    Compute the edges of bins from their center positions.
+
+    Parameters
+    ----------
+    centers : array_like
+        1D array of bin center positions. Must contain at least two elements.
+
+    Returns
+    -------
+    edges : ndarray
+        1D array of bin edge positions, with length `len(centers) + 1`.
+
+    Raises
+    ------
+    ValueError
+        If `centers` contains fewer than two elements.
+
+    Notes
+    -----
+    The edges are calculated as follows:
+    - Inner edges are the midpoints between adjacent centers.
+    - The first and last edges are extrapolated based on the adjacent bin width.
+
+    Examples
+    --------
+    >>> centers = [1, 2, 3]
+    >>> edges_from_centers(centers)
+    array([0.5, 1.5, 2.5, 3.5])
+    """
+    centers = np.asarray(centers)
+    if centers.size < 2:
+        raise ValueError("Array must have at least 2 elements to calculate edges.")
+
+    # 1. Calculate midpoints for inner edges
+    inner_edges = (centers[:-1] + centers[1:]) / 2.0
+
+    # 2. Extrapolate the first and last edges based on the adjacent bin width
+    first_edge = centers[0] - (centers[1] - centers[0]) / 2.0
+    last_edge = centers[-1] + (centers[-1] - centers[-2]) / 2.0
+
+    # 3. Combine into a single array
+    return np.concatenate(([first_edge], inner_edges, [last_edge]))
