@@ -54,6 +54,7 @@ Tools for calibration and masking:
   - `geometry_calibration`: Perform geometry calibration using theoretical scattering patterns.
   - `masking`: Create and manage masks for X-ray scattering data.
   - `scattering_corrections`: Compute correction factors for scattering experiments.
+  - `timetool_calibration`: Helper functions for arrival time monitors.
 
 ### 5. `xrayscatteringtools.theory`
 Theoretical modeling of X-ray scattering:
