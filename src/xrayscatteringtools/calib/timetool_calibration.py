@@ -2,7 +2,6 @@ import numpy as np
 import math
 from ruamel.yaml import YAML
 
-
 def fast_erf_fit(array, min_val=0.1, max_val=0.9):
     """
     Estimate the center and characteristics of an error-function-like curve.
@@ -169,3 +168,85 @@ def add_calibration_to_yaml(run_range, slope, intercept, file_path = 'config.yam
         yaml.dump(data, f)
         
     print(f"Successfully appended calibration to '{key_name}' in {file_path}.")
+
+def apply_timetool_correction(delays, edge_positions, slopes, intercepts, run_indicator=None):
+    """
+    Apply timetool corrections, optionally using per-run calibration parameters.
+
+    Parameters
+    ----------
+    delays : array_like
+        Per-shot delay values to correct.
+    edge_positions : array_like
+        Per-shot measured edge positions (pixels) used to compute the correction.
+    slopes : scalar, sequence or ndarray
+        Slope(s) for the correction (seconds per pixel). If a single value
+        is provided, it will be applied to all shots. If multiple values
+        are provided, their length must match the number of unique runs
+        in `run_indicator`.
+    intercepts : scalar, sequence or ndarray
+        Intercept(s) for the correction (seconds). If a single value is
+        provided, it will be applied to all shots. If multiple values
+        are provided, their length must match the number of unique runs
+        in `run_indicator`.
+    run_indicator : array_like, optional
+        Per-shot run identifier. If provided, it must have the same length
+        as `delays` and `edge_positions`. The unique values in `run_indicator`
+        determine which slope and intercept to use for each shot.
+
+    Returns
+    -------
+    corrected_delays : ndarray
+        Array of corrected delays, same shape as `delays`.
+    """
+    delays = np.asarray(delays)
+    edge_positions = np.asarray(edge_positions)
+
+    if run_indicator is None:
+        # Single calibration case
+        if not np.isscalar(slopes) or not np.isscalar(intercepts):
+            raise ValueError("When run_indicator is not provided, slopes and intercepts must be scalars.")
+
+        timetool_correction = edge_positions * slopes + intercepts
+        corrected_delays = delays + timetool_correction
+
+    else:
+        # Multi-calibration case
+        run_indicator = np.asarray(run_indicator)
+        unique_runs = np.unique(run_indicator)
+        num_unique_runs = unique_runs.size
+
+        slopes = np.asarray(slopes)
+        intercepts = np.asarray(intercepts)
+
+        # Validate slopes and intercepts
+        if slopes.ndim == 0:
+            slopes = slopes.reshape(1)
+        if intercepts.ndim == 0:
+            intercepts = intercepts.reshape(1)
+
+        if slopes.size == 1:
+            slopes = np.full(num_unique_runs, slopes.item())
+        if intercepts.size == 1:
+            intercepts = np.full(num_unique_runs, intercepts.item())
+
+        if slopes.size != num_unique_runs or intercepts.size != num_unique_runs:
+            raise ValueError("Number of slopes/intercepts must be 1 or match the number of unique runs in run_indicator.")
+
+        if run_indicator.shape != delays.shape or run_indicator.shape != edge_positions.shape:
+            raise ValueError("run_indicator, delays, and edge_positions must have the same shape.")
+
+        # Prepare output array
+        corrected_delays = np.empty_like(delays, dtype=float)
+
+        # Apply the corresponding calibration to each subset of shots
+        for i, run in enumerate(unique_runs):
+            mask = run_indicator == run
+            if not np.any(mask):
+                continue
+            s = float(slopes[i])
+            it = float(intercepts[i])
+            timetool_correction = edge_positions[mask] * s + it
+            corrected_delays[mask] = delays[mask] + timetool_correction
+
+    return corrected_delays
