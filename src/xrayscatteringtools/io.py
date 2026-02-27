@@ -213,7 +213,7 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
 
     Returns
     -------
-    srt or list of str
+    str or list of str
         Data directory paths corresponding to each run number.
 
     Raises
