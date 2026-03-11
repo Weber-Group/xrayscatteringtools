@@ -14,9 +14,8 @@ license = "MIT"
 license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.9"
 dependencies = [
-    "numpy<2",
+    "numpy",
     "scipy>=1.11",
-    "pathlib",
     "IPython",
     "matplotlib",
     "tqdm",
