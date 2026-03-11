@@ -80,64 +80,77 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         # Repeat the single folders to match the length of runNumbers
         folders = folders * len(runNumbers)
         
+    # Build the set of keys we actually need to load from each file
+    needed_keys = set(keys_to_combine) | set(keys_to_sum) | set(keys_to_check)
+    needed_keys.add('lightStatus/xray')  # Always needed for run_indicator
+
     data_array = []
-    for i,runNumber in enumerate(tqdm(runNumbers,desc="Loading Runs")):
+    for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
         data = {}
         experiment = folders[i].split('/')[6]
         filename = f'{folders[i]}{experiment}_Run{runNumToString(runNumber)}.h5'
         print('Loading: ' + filename)
-        with h5py.File(filename,'r') as f:
-            get_leaves(f,data,verbose=verbose)
+        with h5py.File(filename, 'r') as f:
+            # Print all keys and shapes without loading data
+            if verbose:
+                def _print_leaf(name):
+                    item = f[name]
+                    if isinstance(item, h5py.Dataset):
+                        print(f"  {name}  {item.shape}  {item.dtype}")
+                f.visit(_print_leaf)
+            # Only load the keys we need
+            for key in needed_keys:
+                if key in f:
+                    data[key] = f[key][()]
+                    if verbose:
+                        print(f"  [loaded] {key}")
             data_array.append(data)
+
     data_combined = {}
-    epicsLoad = False # Default flag value, must be set for later on
+    epicsLoad = False
     for key in tqdm(keys_to_combine, desc="Combining Data"):
-        # Special routine for loading the gas cell pressure if it was not saved. Likely a better way to do this... should talk to silke
-        epicsLoad = False # Default flag value for each key
-        if (key == 'epicsUser/gasCell_pressure') & (archImport):
+        epicsLoad = False
+        if (key == 'epicsUser/gasCell_pressure') and archImport:
             try:
-                arr = np.squeeze(data_array[0][key])
-                for data in data_array[1:]:
-                    arr = np.concatenate((arr,np.squeeze(data[key])),axis=0)
-                data_combined[key] = arr
-            except:
-                epicsLoad = True # Set flag if we can't load from the files
-        else: # All other keys load normally
-            arr = np.squeeze(data_array[0][key])
-            for data in data_array[1:]:
-                arr = np.concatenate((arr,np.squeeze(data[key])),axis=0)
-            data_combined[key] = arr
-    run_indicator = np.array([])
-    for i,runNumber in enumerate(tqdm(runNumbers, desc="Creating Run Indicator")):
-        run_indicator = np.concatenate((run_indicator,runNumber*np.ones_like(data_array[i]['lightStatus/xray'])))
+                chunks = [np.squeeze(d[key]) for d in data_array]
+                data_combined[key] = np.concatenate(chunks, axis=0)
+            except KeyError:
+                epicsLoad = True
+        else:
+            chunks = [np.squeeze(d[key]) for d in data_array]
+            data_combined[key] = np.concatenate(chunks, axis=0)
+
+    run_indicator = np.concatenate([
+        runNumber * np.ones_like(data_array[i]['lightStatus/xray'])
+        for i, runNumber in enumerate(runNumbers)
+    ])
     data_combined['run_indicator'] = run_indicator
+
     for key in tqdm(keys_to_sum, desc="Summing Data"):
         arr = np.zeros_like(data_array[0][key])
         for data in data_array:
             arr += data[key]
         data_combined[key] = arr
+
     for key in tqdm(keys_to_check, desc="Checking Data"):
         arr = data_array[0][key]
-        for i,data in enumerate(data_array):
-            if not np.array_equal(data[key],arr):
+        for i, data in enumerate(data_array):
+            if not np.array_equal(data[key], arr):
                 print(f'Problem with key {key} in run {runNumbers[i]}')
         data_combined[key] = arr
     # Now to do the special gas cell pressure loading if the flag was set
     if epicsLoad:
         archive = EpicsArchive()
         unixTime = data_combined['unixTime']
-        epicsPressure = np.array([]) # Init empty array
-        for i,runNumber in enumerate(runNumbers):
-            # Pull out start and end times from each run
-            runUnixTime = unixTime[run_indicator==runNumber]
+        epicsPressure_chunks = []
+        for i, runNumber in enumerate(runNumbers):
+            runUnixTime = unixTime[run_indicator == runNumber]
             startTime = runUnixTime[0]
             endTime = runUnixTime[-1]
-            [times,pressure] = archive.get_points(PV='CXI:MKS670:READINGGET', start=startTime, end=endTime,unit="seconds",raw=True,two_lists=True); # Make Request
-            # Interpolate the data
+            [times, pressure] = archive.get_points(PV='CXI:MKS670:READINGGET', start=startTime, end=endTime, unit="seconds", raw=True, two_lists=True)
             interp_func = interp1d(times, pressure, kind='previous', fill_value='extrapolate')
-            epicsPressure = np.append(epicsPressure,interp_func(runUnixTime)) # Append the data
-        # Once all the data is loaded in
-        data_combined['epicsUser/gasCell_pressure'] = epicsPressure # Save to the original key.       
+            epicsPressure_chunks.append(interp_func(runUnixTime))
+        data_combined['epicsUser/gasCell_pressure'] = np.concatenate(epicsPressure_chunks)
     print('Loaded Data')
     return data_combined
 
@@ -325,10 +338,7 @@ def runNumToString(num):
     numstr : str
         The zero-padded string representation of the run number.
     """
-    numstr = str(num)
-    while len(numstr) < 4:
-        numstr = '0' + numstr
-    return numstr
+    return str(num).zfill(4)
 
 def read_xyz(filename):
     """
