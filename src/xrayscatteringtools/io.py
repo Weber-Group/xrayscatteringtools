@@ -4,6 +4,7 @@ from .epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 import yaml
 from .utils import element_number_to_symbol
+from numbers import Number
 
 def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
     """
@@ -90,7 +91,7 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
             data_array.append(data)
     data_combined = {}
     epicsLoad = False # Default flag value, must be set for later on
-    for key in keys_to_combine:
+    for key in tqdm(keys_to_combine, desc="Combining Data"):
         # Special routine for loading the gas cell pressure if it was not saved. Likely a better way to do this... should talk to silke
         epicsLoad = False # Default flag value for each key
         if (key == 'epicsUser/gasCell_pressure') & (archImport):
@@ -107,15 +108,15 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
                 arr = np.concatenate((arr,np.squeeze(data[key])),axis=0)
             data_combined[key] = arr
     run_indicator = np.array([])
-    for i,runNumber in enumerate(runNumbers):
+    for i,runNumber in enumerate(tqdm(runNumbers, desc="Creating Run Indicator")):
         run_indicator = np.concatenate((run_indicator,runNumber*np.ones_like(data_array[i]['lightStatus/xray'])))
     data_combined['run_indicator'] = run_indicator
-    for key in keys_to_sum:
+    for key in tqdm(keys_to_sum, desc="Summing Data"):
         arr = np.zeros_like(data_array[0][key])
         for data in data_array:
             arr += data[key]
         data_combined[key] = arr
-    for key in keys_to_check:
+    for key in tqdm(keys_to_check, desc="Checking Data"):
         arr = data_array[0][key]
         for i,data in enumerate(data_array):
             if not np.array_equal(data[key],arr):
@@ -290,7 +291,7 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
         If there is an error parsing the YAML configuration file.
     """
     # Ensure run_numbers is iterable
-    if isinstance(run_numbers, int):
+    if isinstance(run_numbers, Number):
         run_numbers = [run_numbers]
 
     with open(config_path) as f:
