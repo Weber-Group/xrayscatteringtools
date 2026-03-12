@@ -60,7 +60,17 @@ def compute_q_map(x, y, x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
     np.ndarray
         Per-pixel momentum transfer values in inverse Angstroms (same shape
         as *x* and *y*).
+
+    Raises
+    ------
+    ValueError
+        If *x* and *y* do not have the same shape, or if *keV* is not positive.
     """
+    x, y = np.asarray(x), np.asarray(y)
+    if x.shape != y.shape:
+        raise ValueError(f"'x' and 'y' must have the same shape, got {x.shape} and {y.shape}.")
+    if keV <= 0:
+        raise ValueError(f"'keV' must be positive, got {keV}.")
     tx_rad, ty_rad = np.deg2rad(tx), np.deg2rad(ty)
     z_total = z0 + z_off
 
@@ -193,6 +203,14 @@ def azimuthalBinning(
     >>> radial_centers, azimuthal_average = azimuthalBinning(img, x, y)
     >>> radial_centers, azimuthal_average = azimuthalBinning(img, x, y, x0=100, y0=150, z0=95000, keV=12.7, qBin=0.02, phiBins=8)
     """
+    img, x, y = np.asarray(img, dtype=float), np.asarray(x), np.asarray(y)
+    if img.shape != x.shape or img.shape != y.shape:
+        raise ValueError(
+            f"'img', 'x', and 'y' must have the same shape, got "
+            f"{img.shape}, {x.shape}, and {y.shape}."
+        )
+    if keV <= 0:
+        raise ValueError(f"'keV' must be positive, got {keV}.")
 
     # --- 1. Image Preprocessing ---
     # Apply dark and gain corrections if provided
@@ -623,7 +641,23 @@ def _load_J4M():
         """
     return obj
 
-J4M = _load_J4M() 
+
+class _LazyJ4M:
+    """Descriptor that defers loading Jungfrau4M.h5 until first attribute access."""
+    _instance = None
+
+    def __getattr__(self, name):
+        if _LazyJ4M._instance is None:
+            _LazyJ4M._instance = _load_J4M()
+        return getattr(_LazyJ4M._instance, name)
+
+    def __repr__(self):
+        if _LazyJ4M._instance is None:
+            return "<J4M: not yet loaded>"
+        return repr(_LazyJ4M._instance)
+
+
+J4M = _LazyJ4M()
 
 def compress_ranges(nums):
     """
