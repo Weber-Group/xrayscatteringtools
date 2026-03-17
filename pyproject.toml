@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xrayscatteringtools"
-version = "0.3.0"
+version = "1.0.0"
 description = "A library for gas phase analysis at the CXI endstation"
 authors = [
     { name = "David Romano", email = "david_j_romano@brown.edu" }
@@ -14,16 +14,16 @@ license = "MIT"
 license-files = ["LICEN[CS]E*"]
 requires-python = ">=3.9"
 dependencies = [
-    "numpy<2",
+    "numpy",
     "scipy>=1.11",
-    "pathlib",
     "IPython",
     "matplotlib",
     "tqdm",
     "h5py",
     "requests",
     "xraylib",
-    "pyyaml"
+    "pyyaml",
+    "ruamel.yaml"
 ]
 
 [project.optional-dependencies]
@@ -44,6 +44,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+filterwarnings = [
+    "ignore::RuntimeWarning:xrayscatteringtools.calib.scattering_corrections",
+]
 
 [tool.black]
 line-length = 88

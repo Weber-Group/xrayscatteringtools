@@ -4,15 +4,16 @@ from .epicsArch import EpicsArchive
 from scipy.interpolate import interp1d
 import yaml
 from .utils import element_number_to_symbol
+from numbers import Number
 
-def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archImport=False):
+def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archPVs=None):
     """
     Combine data from multiple experimental runs into a single consolidated dataset.
 
     This function loads data from HDF5 files corresponding to each run, concatenates or sums
-    selected keys, checks consistency of other keys, and optionally fills missing EPICS 
-    gas cell pressure data from an archive. Each run's data can reside in a separate folder 
-    or in a single common folder.
+    selected keys, checks consistency of other keys, and optionally imports EPICS PV data
+    from the archive. Each run's data can reside in a separate folder or in a single common
+    folder.
 
     Parameters
     ----------
@@ -31,9 +32,11 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         are found, a warning is printed.
     verbose : bool, optional
         If True, prints detailed information during data loading (default: False).
-    archImport : bool, optional
-        If True, enables special handling of missing gas cell pressure data from older
-        archive files (default: False).
+    archPVs : str or list of str, optional
+        EPICS PV name(s) to fetch from the EPICS archive and interpolate onto the
+        run timestamps. Each PV is stored in `data_combined` using the PV name as
+        the key. For this to work, the 'unixTime' key must be present in each run's data.
+        Note: this will only work on machines with access to the EPICS archive. (default: None).
 
     Returns
     -------
@@ -43,8 +46,7 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         - Summed keys from `keys_to_sum`
         - Checked keys from `keys_to_check`
         - `'run_indicator'`: an array indicating which run each data point belongs to
-        - `'epicsUser/gasCell_pressure'`: filled either from files or from the EPICS archive
-          if `archImport` is True and the key was missing.
+        - One key per PV in `archPVs`, containing the interpolated archive data.
 
     Raises
     ------
@@ -53,6 +55,17 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
     ValueError
         If multiple folders are provided but the number of folders does not match
         the number of run numbers.
+
+    Notes
+    -----
+    If unixTime is not present in the .h5 files, add the following code into the event loop of the producer script to save the unix timestamps.
+    ```python
+    unixTimeDict = {}
+    evtid = evt.get(psana.EventId)
+    tsec, tnsec = evtid.time()
+    unixTimeDict['unixTime'] = tsec+tnsec/1e9
+    small_data.event(unixTimeDict)
+    ```
     """
     from tqdm.auto import tqdm # Lazy
     # Ensure runNumbers is a list
@@ -79,64 +92,74 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         # Repeat the single folders to match the length of runNumbers
         folders = folders * len(runNumbers)
         
+    # Build the set of keys we actually need to load from each file
+    needed_keys = set(keys_to_combine) | set(keys_to_sum) | set(keys_to_check)
+    needed_keys.add('lightStatus/xray')  # Always needed for run_indicator
+
     data_array = []
-    for i,runNumber in enumerate(tqdm(runNumbers,desc="Loading Runs")):
+    for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
         data = {}
         experiment = folders[i].split('/')[6]
         filename = f'{folders[i]}{experiment}_Run{runNumToString(runNumber)}.h5'
         print('Loading: ' + filename)
-        with h5py.File(filename,'r') as f:
-            get_leaves(f,data,verbose=verbose)
+        with h5py.File(filename, 'r') as f:
+            # Print all keys and shapes without loading data
+            if verbose:
+                def _print_leaf(name):
+                    item = f[name]
+                    if isinstance(item, h5py.Dataset):
+                        print(f"  {name}  {item.shape}  {item.dtype}")
+                f.visit(_print_leaf)
+            # Only load the keys we need
+            for key in needed_keys:
+                if key in f:
+                    data[key] = f[key][()]
+                    if verbose: 
+                        print(f"  [loaded] {key}")
             data_array.append(data)
+
     data_combined = {}
-    epicsLoad = False # Default flag value, must be set for later on
-    for key in keys_to_combine:
-        # Special routine for loading the gas cell pressure if it was not saved. Likely a better way to do this... should talk to silke
-        epicsLoad = False # Default flag value for each key
-        if (key == 'epicsUser/gasCell_pressure') & (archImport):
-            try:
-                arr = np.squeeze(data_array[0][key])
-                for data in data_array[1:]:
-                    arr = np.concatenate((arr,np.squeeze(data[key])),axis=0)
-                data_combined[key] = arr
-            except:
-                epicsLoad = True # Set flag if we can't load from the files
-        else: # All other keys load normally
-            arr = np.squeeze(data_array[0][key])
-            for data in data_array[1:]:
-                arr = np.concatenate((arr,np.squeeze(data[key])),axis=0)
-            data_combined[key] = arr
-    run_indicator = np.array([])
-    for i,runNumber in enumerate(runNumbers):
-        run_indicator = np.concatenate((run_indicator,runNumber*np.ones_like(data_array[i]['lightStatus/xray'])))
+    for key in tqdm(keys_to_combine, desc="Combining Data"):
+        chunks = [np.squeeze(d[key]) for d in data_array]
+        data_combined[key] = np.concatenate(chunks, axis=0)
+
+    run_indicator = np.concatenate([
+        runNumber * np.ones_like(data_array[i]['lightStatus/xray'])
+        for i, runNumber in enumerate(runNumbers)
+    ])
     data_combined['run_indicator'] = run_indicator
-    for key in keys_to_sum:
+
+    for key in tqdm(keys_to_sum, desc="Summing Data"):
         arr = np.zeros_like(data_array[0][key])
         for data in data_array:
             arr += data[key]
         data_combined[key] = arr
-    for key in keys_to_check:
+
+    for key in tqdm(keys_to_check, desc="Checking Data"):
         arr = data_array[0][key]
-        for i,data in enumerate(data_array):
-            if not np.array_equal(data[key],arr):
+        for i, data in enumerate(data_array):
+            if not np.array_equal(data[key], arr):
                 print(f'Problem with key {key} in run {runNumbers[i]}')
         data_combined[key] = arr
-    # Now to do the special gas cell pressure loading if the flag was set
-    if epicsLoad:
+    # Import EPICS PV data from the archive if requested
+    if archPVs is not None:
+        if isinstance(archPVs, str):
+            archPVs = [archPVs]
         archive = EpicsArchive()
         unixTime = data_combined['unixTime']
-        epicsPressure = np.array([]) # Init empty array
-        for i,runNumber in enumerate(runNumbers):
-            # Pull out start and end times from each run
-            runUnixTime = unixTime[run_indicator==runNumber]
-            startTime = runUnixTime[0]
-            endTime = runUnixTime[-1]
-            [times,pressure] = archive.get_points(PV='CXI:MKS670:READINGGET', start=startTime, end=endTime,unit="seconds",raw=True,two_lists=True); # Make Request
-            # Interpolate the data
-            interp_func = interp1d(times, pressure, kind='previous', fill_value='extrapolate')
-            epicsPressure = np.append(epicsPressure,interp_func(runUnixTime)) # Append the data
-        # Once all the data is loaded in
-        data_combined['epicsUser/gasCell_pressure'] = epicsPressure # Save to the original key.       
+        for pv in tqdm(archPVs, desc="Loading EPICS PVs"):
+            pv_chunks = []
+            for i, runNumber in enumerate(runNumbers):
+                runUnixTime = unixTime[run_indicator == runNumber]
+                startTime = runUnixTime[0]
+                endTime = runUnixTime[-1]
+                [times, values] = archive.get_points(
+                    PV=pv, start=startTime, end=endTime,
+                    unit="seconds", raw=True, two_lists=True
+                )
+                interp_func = interp1d(times, values, kind='previous', fill_value='extrapolate')
+                pv_chunks.append(interp_func(runUnixTime))
+            data_combined[pv] = np.concatenate(pv_chunks)
     print('Loaded Data')
     return data_combined
 
@@ -213,7 +236,7 @@ def get_data_paths(run_numbers, config_path='config.yaml'):
 
     Returns
     -------
-    list of str
+    str or list of str
         Data directory paths corresponding to each run number.
 
     Raises
@@ -279,7 +302,7 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
 
     Returns
     -------
-    list
+    variable or list
         The configuration values corresponding to the specified key.
 
     Raises
@@ -290,7 +313,7 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
         If there is an error parsing the YAML configuration file.
     """
     # Ensure run_numbers is iterable
-    if isinstance(run_numbers, int):
+    if isinstance(run_numbers, Number):
         run_numbers = [run_numbers]
 
     with open(config_path) as f:
@@ -305,6 +328,10 @@ def get_config_for_runs(run_numbers,key,subkey,config_path='config.yaml'):
                 break
         else:
             raise ValueError(f"No {key}/{subkey} value found for run number: {run}")
+    # Return scalar if only one value
+    if len(values) == 1:
+        return values[0]
+
     return values
 
 def runNumToString(num):
@@ -320,10 +347,7 @@ def runNumToString(num):
     numstr : str
         The zero-padded string representation of the run number.
     """
-    numstr = str(num)
-    while len(numstr) < 4:
-        numstr = '0' + numstr
-    return numstr
+    return str(num).zfill(4)
 
 def read_xyz(filename):
     """

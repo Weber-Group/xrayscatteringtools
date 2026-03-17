@@ -36,7 +36,12 @@ def _iam_loader(system):
         num_atoms = len(system.atoms)
         coords = system.geometry
         atoms = system.atoms
-    return num_atoms, atoms, coords        
+    else:
+        raise TypeError(
+            f"'system' must be a path to an .xyz/.mol file or a SimpleNamespace geometry object, "
+            f"got {type(system).__name__}"
+        )
+    return num_atoms, atoms, coords
 
 def iam_elastic_pattern(system, q_arr):
     """
@@ -61,6 +66,9 @@ def iam_elastic_pattern(system, q_arr):
     - Includes both atomic self-scattering and molecular interference terms.
     - The molecular interference term is calculated using the Debye formula with np.sinc.
     """
+    q_arr = np.asarray(q_arr, dtype=float)
+    if q_arr.ndim != 1:
+        raise ValueError(f"'q_arr' must be a 1D array, got shape {q_arr.shape}.")
     num_atoms, atoms, coords = _iam_loader(system)
     
     coords = np.array(coords)  # Ensure coords is a NumPy array for advanced indexing
@@ -86,15 +94,14 @@ def iam_elastic_pattern(system, q_arr):
     atomic_contribution = np.sum(scattering_factors**2, axis=0)
     elastic_pattern = np.copy(atomic_contribution)
 
-    # Molecular contribution (interference terms)
-    for i in range(num_atoms):
-        for j in range(i + 1, num_atoms):
-            a = scattering_factors[i, :]
-            b = scattering_factors[j, :]
-            r_ij = distances[i, j]
-            # np.sinc(x) = sin(pi*x)/(pi*x), so argument is q*r/pi
-            molecular_contribution = 2 * a * b * np.sinc(q_arr * r_ij / np.pi)
-            elastic_pattern += molecular_contribution
+    # Molecular contribution (interference terms) — vectorized Debye sum
+    i_idx, j_idx = np.triu_indices(num_atoms, k=1)
+    r_ij = distances[i_idx, j_idx]  # shape: (n_pairs,)
+    fi = scattering_factors[i_idx, :]  # shape: (n_pairs, n_q)
+    fj = scattering_factors[j_idx, :]  # shape: (n_pairs, n_q)
+    # np.sinc(x) = sin(pi*x)/(pi*x), so argument is q*r/pi
+    sinc_term = np.sinc(q_arr[np.newaxis, :] * r_ij[:, np.newaxis] / np.pi)
+    elastic_pattern += np.sum(2 * fi * fj * sinc_term, axis=0)
 
     return elastic_pattern
 
@@ -207,7 +214,7 @@ def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.lin
     # Prepare result
     compton_spectrum = np.zeros((len(theta), len(EF_keV_array)))
 
-    # Loop over elements because xraylib isn't vectorized
+    # Loop over elements because xraylib isn't vectorized per-element
     for Zidx, Z in enumerate(system['Elements']):
         # Initialize contribution for this element
         J_element = np.zeros_like(compton_spectrum)
@@ -228,12 +235,13 @@ def iam_compton_spectrum(formula, theta, EI_keV, EF_keV_array, pz_au_grid=np.lin
                 # Energy cutoff for this shell
                 shell_liftoff = EI_keV - xraylib.EdgeEnergy(Z, shell)
 
-                # Evaluate profile at all |pz| for every theta/E
-                for i_th in range(len(theta)):
-                    mask = EF_keV_array > shell_liftoff
-                    J_vals = J_partial_interp(np.abs(pz_au[i_th, :]))
-                    # Apply liftoff: zero contribution where EF > shell_liftoff
-                    J_element[i_th, :] += np.where(mask, 0.0, J_vals)
+                # Evaluate profile at all |pz| for all theta at once (vectorized)
+                # pz_au shape: (Ntheta, NE) -> evaluate interpolant on flattened array
+                J_vals_flat = J_partial_interp(np.abs(pz_au).ravel())
+                J_vals = J_vals_flat.reshape(pz_au.shape)  # (Ntheta, NE)
+                # Apply liftoff mask: zero contribution where EF > shell_liftoff
+                liftoff_mask = EF_keV_array[np.newaxis, :] > shell_liftoff  # broadcasts to (Ntheta, NE)
+                J_element += np.where(liftoff_mask, 0.0, J_vals)
             except Exception:
                 # Skip invalid shells
                 continue
