@@ -27,6 +27,7 @@ _KEYS_TO_COMBINE = [
 _KEYS_TO_SUM = [
     'Sums/jungfrau4M_calib_xrayOn_thresADU1',
     'Sums/jungfrau4M_calib_dropped',
+    'Sums/jungfrau4M_calib'
 ]
 _KEYS_TO_CHECK: list[str] = []
 
