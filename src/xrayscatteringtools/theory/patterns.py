@@ -37,18 +37,23 @@ def _make_default_obj(f):
     Returns
     -------
     obj : SimpleNamespace
-        A SimpleNamespace object with attributes: q, I_q, I_q_elastic, I_q_inelastic, molecule, method, basis_set, n_electrons.
+        A SimpleNamespace object with attributes: q, I_q, molecule, method, basis_set, n_electrons,
+        and optionally I_q_elastic and I_q_inelastic if present in the file.
     """
 
-    q = f["q"][:]     # read dataset into memory
-    I_q = f["I_q"][:]
-    I_q_elastic = f["I_q_elastic"][:]
-    I_q_inelastic = f["I_q_inelastic"][:]
-    molecule = f.attrs["molecule"]
-    method = f.attrs["method"]
-    basis_set = f.attrs["basis_set"]
-    n_electrons = f.attrs["n_electrons"]
-    return SimpleNamespace(q=q, I_q=I_q, I_q_elastic=I_q_elastic, I_q_inelastic=I_q_inelastic, molecule=molecule, method=method, basis_set=basis_set, n_electrons=n_electrons)
+    attrs = dict(
+        q=f["q"][:],
+        I_q=f["I_q"][:],
+        molecule=f.attrs["molecule"],
+        method=f.attrs["method"],
+        basis_set=f.attrs["basis_set"],
+        n_electrons=f.attrs["n_electrons"],
+    )
+    if "I_q_elastic" in f:
+        attrs["I_q_elastic"] = f["I_q_elastic"][:]
+    if "I_q_inelastic" in f:
+        attrs["I_q_inelastic"] = f["I_q_inelastic"][:]
+    return SimpleNamespace(**attrs)
 
 def _make_default_docstring(obj):
     """
@@ -65,6 +70,17 @@ def _make_default_docstring(obj):
         The generated docstring.
     """
 
+    elastic_doc = ""
+    if hasattr(obj, "I_q_elastic"):
+        elastic_doc = f"""    I_q_elastic : ndarray of shape ({len(obj.I_q_elastic)},)
+        Elastic scattering intensity values corresponding to `q`.
+"""
+    inelastic_doc = ""
+    if hasattr(obj, "I_q_inelastic"):
+        inelastic_doc = f"""    I_q_inelastic : ndarray of shape ({len(obj.I_q_inelastic)},)
+        Inelastic scattering intensity values corresponding to `q`.
+"""
+
     doc = f"""
     Ab initio {obj.molecule} scattering data at the {obj.method}/{obj.basis_set} level of theory.
 
@@ -74,11 +90,7 @@ def _make_default_docstring(obj):
         Momentum transfer values (q) in inverse angstroms. Ranges from {obj.q[0]} to {obj.q[-1]} Å⁻¹. ({invAngstroms2au(obj.q[0])} to {invAngstroms2au(obj.q[-1])} a.u.).
     I_q : ndarray of shape ({len(obj.I_q)},)
         Total scattering intensity values corresponding to `q`.
-    I_q_elastic : ndarray of shape ({len(obj.I_q_elastic)},)
-        Elastic scattering intensity values corresponding to `q`.
-    I_q_inelastic : ndarray of shape ({len(obj.I_q_inelastic)},)
-        Inelastic scattering intensity values corresponding to `q`.
-    molecule : str
+{elastic_doc}{inelastic_doc}    molecule : str
         The molecular formula of the species.
     method : str
         The method used for the calculation.
