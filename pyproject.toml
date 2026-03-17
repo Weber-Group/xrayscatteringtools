@@ -44,6 +44,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+filterwarnings = [
+    "ignore::RuntimeWarning:xrayscatteringtools.calib.scattering_corrections",
+]
 
 [tool.black]
 line-length = 88
