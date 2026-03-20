@@ -95,6 +95,8 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
     # Build the set of keys we actually need to load from each file
     needed_keys = set(keys_to_combine) | set(keys_to_sum) | set(keys_to_check)
     needed_keys.add('lightStatus/xray')  # Always needed for run_indicator
+    if archPVs is not None:
+        needed_keys.add('unixTime')  # Needed for EPICS PV interpolation
 
     data_array = []
     for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
