@@ -1,6 +1,5 @@
 import numpy as np
 from .utils import keV2Angstroms, J4M
-import pyFAI
 
 def compute_q_map(x, y, x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
     """Compute the momentum-transfer (*q*) map for a detector pixel grid.
@@ -12,7 +11,7 @@ def compute_q_map(x, y, x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
     x, y : np.ndarray
         Pixel coordinates in microns (same shape; e.g. ``J4M.x``, ``J4M.y``).
     x0, y0 : float, optional
-        Beam-centre coordinates in microns.  Default is 0.
+        Beam-center coordinates in microns.  Default is 0.
     z0 : float, optional
         Sample-to-detector distance in microns.  Default is 90 000.
     tx, ty : float, optional
@@ -324,46 +323,10 @@ def azimuthalBinning(
 
     return np.squeeze(radial_centers), np.squeeze(azimuthal_average)
 
-def _build_j4m_detector():
-    """Build a pyFAI Detector whose pixel corners match the J4M layout.
-
-    The corner positions are derived from the pixel-centre arrays
-    ``J4M.x`` and ``J4M.y`` (both in microns) by offsetting ±37.5 µm
-    (half the 75 µm Jungfrau pixel pitch).  The resulting detector
-    lives in a coordinate frame where the origin coincides with the
-    J4M origin, so PONI = (y0, x0) in metres maps directly to the
-    beam-centre convention used by :func:`azimuthalBinning`.
-    """
-    from pyFAI.detectors import Detector
-
-    # Flatten (8, 512, 1024) → (4096, 1024) and convert µm → m
-    xc = J4M.x.reshape(-1, J4M.x.shape[-1]) * 1e-6
-    yc = J4M.y.reshape(-1, J4M.y.shape[-1]) * 1e-6
-    n_slow, n_fast = xc.shape
-
-    half = 37.5e-6  # half-pixel in metres
-
-    # pyFAI corner array: (n_slow, n_fast, 4, 3) — coords are (z, y, x)
-    corners = np.zeros((n_slow, n_fast, 4, 3), dtype=np.float64)
-    for idx, (dy, dx) in enumerate([
-        (-half, -half),   # corner 0: bottom-left
-        (-half, +half),   # corner 1: bottom-right
-        (+half, +half),   # corner 2: top-right
-        (+half, -half),   # corner 3: top-left
-    ]):
-        corners[:, :, idx, 1] = yc + dy   # y
-        corners[:, :, idx, 2] = xc + dx   # x
-        # z stays 0 — all pixels in the detector plane
-
-    detector = Detector(pixel1=75e-6, pixel2=75e-6, max_shape=(n_slow, n_fast))
-    detector.set_pixel_corners(corners)
-    return detector
-
-
-def _create_pyfai_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
+def create_J4m_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
     """Create a pyFAI AzimuthalIntegrator configured for the Jungfrau 4M.
 
-    The detector is built from the actual J4M pixel-centre coordinates,
+    The detector is built from the actual J4M pixel-center coordinates,
     so the geometry faithfully reproduces the multi-module layout
     (including inter-module gaps).
 
@@ -373,7 +336,7 @@ def _create_pyfai_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0)
     Parameters
     ----------
     x0, y0 : float, optional
-        Beam-centre coordinates in microns.  Default is 0.
+        Beam-center coordinates in microns.  Default is 0.
     z0 : float, optional
         Sample-to-detector distance in microns.  Default is 90 000.
     tx, ty : float, optional
@@ -393,13 +356,10 @@ def _create_pyfai_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0)
     ImportError
         If pyFAI is not installed.
     """
-    try:
-        from pyFAI.integrator.azimuthal import AzimuthalIntegrator
-    except ImportError:
-        raise ImportError(
-            "pyFAI is required for this function. "
-            "Install it with:  pip install pyFAI-core"
-        )
+
+    # Lazy load these 
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+    from pyFAI.detectors import Detector
 
     dist = (z0 + z_off) * 1e-6            # microns → metres
     poni1 = y0 * 1e-6                      # slow axis = y
@@ -409,7 +369,31 @@ def _create_pyfai_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0)
     rot1 = np.deg2rad(ty)
     rot2 = np.deg2rad(tx)
 
-    detector = _build_j4m_detector()
+    # --- Create a custom pyFAI Detector with pixel corners from J4M geometry ---
+
+    # Flatten (8, 512, 1024) → (4096, 1024) and convert µm → m
+    xc = J4M.x.reshape(-1, J4M.x.shape[-1]) * 1e-6
+    yc = J4M.y.reshape(-1, J4M.y.shape[-1]) * 1e-6
+    n_slow, n_fast = xc.shape
+
+    half = 37.5e-6  # half-pixel in meters
+
+    # pyFAI corner array: (n_slow, n_fast, 4, 3) — coords are (z, y, x)
+    corners = np.zeros((n_slow, n_fast, 4, 3), dtype=np.float64)
+    for idx, (dy, dx) in enumerate([
+        (-half, -half),   # corner 0: bottom-left
+        (-half, +half),   # corner 1: bottom-right
+        (+half, +half),   # corner 2: top-right
+        (+half, -half),   # corner 3: top-left
+    ]):
+        corners[:, :, idx, 1] = yc + dy   # y
+        corners[:, :, idx, 2] = xc + dx   # x
+        # z stays 0 — all pixels in the detector plane
+
+    detector = Detector(pixel1=75e-6, pixel2=75e-6, max_shape=(n_slow, n_fast))
+    detector.set_pixel_corners(corners)
+
+    # --- Create the AzimuthalIntegrator with the custom detector ---
 
     ai = AzimuthalIntegrator(
         dist=dist,
@@ -457,9 +441,9 @@ def azimuthalBinning_pyfai(
     img : np.ndarray
         Detector image, either ``(8, 512, 1024)`` or ``(4096, 1024)``.
     x0, y0 : float, optional
-        Beam-centre in microns.  Default is 0.
+        Beam-center in microns.  Default is 0.
     z0 : float, optional
-        Sample-to-detector distance in microns.  Default is 90 000.
+        Sample-to-detector distance in microns.  Default is 90,000.
     tx, ty : float, optional
         Detector tilt angles in degrees.  Default is 0.
     keV : float, optional
@@ -501,13 +485,13 @@ def azimuthalBinning_pyfai(
     Returns
     -------
     radial : np.ndarray
-        Bin centres in Å⁻¹ (or microns if *rBin* is set).
+        Bin centers in Å⁻¹ (or microns if *rBin* is set).
     intensity : np.ndarray
         Integrated intensity.  1-D when *phiBins* is 1, otherwise
         2-D of shape ``(phiBins, n_radial)``.
     """
     if ai is None:
-        ai = _create_pyfai_integrator(x0, y0, z0, tx, ty, keV, z_off)
+        ai = create_J4m_integrator(x0, y0, z0, tx, ty, keV, z_off)
 
     # --- reshape multi-panel images ---
     img = np.asarray(img, dtype=float)

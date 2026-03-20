@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utils import J4M, keV2Angstroms
-from ..azimuthal import compue_q_map
+from ..azimuthal import compute_q_map
 from ..io import combineRuns
 import numpy as np
 import matplotlib.pyplot as plt
