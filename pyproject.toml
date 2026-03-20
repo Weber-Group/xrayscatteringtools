@@ -23,7 +23,8 @@ dependencies = [
     "requests",
     "xraylib",
     "pyyaml",
-    "ruamel.yaml"
+    "ruamel.yaml",
+    "pyFAI"
 ]
 
 [project.optional-dependencies]
