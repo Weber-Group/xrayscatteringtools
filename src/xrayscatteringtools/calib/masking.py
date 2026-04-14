@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 _KEYS_TO_COMBINE = [
     'lightStatus/xray',
     'lightStatus/laser',
-    'jungfrau4M/azav_azav',
 ]
 _KEYS_TO_SUM = [
     'Sums/jungfrau4M_calib_xrayOn_thresADU1',
@@ -214,9 +213,19 @@ class MaskMaker:
         ub : float, optional
             Upper ``arcsinh`` intensity cutoff.
         """
-        # Compute average dark image (xray-off frames only)
-        dark_num_shots = np.sum(~self.dark_data['lightStatus/xray'].astype(bool))
-        dark_avg = np.array(self.dark_data['Sums/jungfrau4M_calib_dropped'] / dark_num_shots)
+
+        if np.sum(~self.dark_data['lightStatus/xray'].astype(bool)) == 0:
+            logger.warning(
+                f"EVR Codes indicate no dropped (dark) shots in run {self.dark_run_number}. "
+                "Double check that this is a proper dark (not pedestal) run. This warning can be ignored if the run is correct, as sometimes the EVR codes are not perfectly reliable."
+            )
+            # Compute average dark image (xray-off frames only)
+            dark_num_shots = len(self.dark_data['lightStatus/xray'])
+            dark_avg = np.array(self.dark_data['Sums/jungfrau4M_calib'] / dark_num_shots)
+        else:
+            dark_num_shots = np.sum(~self.dark_data['lightStatus/xray'].astype(bool))
+            dark_avg = np.array(self.dark_data['Sums/jungfrau4M_calib_dropped'] / dark_num_shots)
+
         dark_arcsinh = np.arcsinh(dark_avg)
 
         if plotting:
@@ -244,7 +253,7 @@ class MaskMaker:
             raise ValueError(f"Lower bound ({lb}) must be less than upper bound ({ub}).")
 
         # Build the mask
-        self.dark_mask = (dark_arcsinh >= lb) & (dark_arcsinh <= ub)
+        self.dark_mask = np.logical_and(self.dark_mask,(dark_arcsinh >= lb) & (dark_arcsinh <= ub))
 
         if plotting:
             dark_avg_masked = np.where(self.dark_mask, dark_avg, np.nan)
@@ -483,7 +492,7 @@ class MaskMaker:
 
         # Compute the q-map
         q_map = compute_q_map(J4M.x, J4M.y, x0, y0, z0, tx, ty, keV, z_off)
-        q_bins = np.linspace(np.nanmin(q_map), np.nanmax(q_map), n_q_bins)
+        q_bins = np.linspace(np.nanmin(q_map[~np.isnan(sample_avg_masked)]), np.nanmax(q_map[~np.isnan(sample_avg_masked)]), n_q_bins)
 
         for q_idx, q_lo in tqdm(enumerate(q_bins[:-1]), total=len(q_bins) - 1):
             q_hi = q_bins[q_idx + 1]
@@ -632,7 +641,7 @@ class MaskMaker:
         sample_avg_corrected = sample_avg_masked / thompson_corr
 
         q_map = compute_q_map(J4M.x, J4M.y, x0, y0, z0, tx, ty, keV, z_off)
-        q_bins = np.linspace(np.nanmin(q_map), np.nanmax(q_map), n_q_bins)
+        q_bins = np.linspace(np.nanmin(q_map[~np.isnan(sample_avg_masked)]), np.nanmax(q_map[~np.isnan(sample_avg_masked)]), n_q_bins)
         q_centers = (q_bins[:-1] + q_bins[1:]) / 2
 
         means = np.empty(len(q_centers))
