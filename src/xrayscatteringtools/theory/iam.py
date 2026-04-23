@@ -139,6 +139,34 @@ def iam_inelastic_pattern(system, q_arr):
     spline_interp = InterpolatedUnivariateSpline(q_inelastic, inelastic_scattering) # Interpolate the inelastic scattering
     return spline_interp(q_arr) # Return the interpolated inelastic scattering to the desired q values
 
+def iam_inelastic_pattern_from_formula(formula, q_arr):
+    """
+    Compute the IAM inelastic (Compton) X-ray scattering intensity from a chemical formula.
+
+    Unlike `iam_inelastic_pattern`, this function does not require atomic coordinates:
+    the Compton intensity in the independent-atom model depends only on atom counts.
+
+    Parameters
+    ----------
+    formula : str
+        Chemical formula (e.g. "SF6", "H2O", "C6H12O6"). Parsed via xraylib.
+    q_arr : array_like
+        Array of momentum transfer values (q) in inverse Angstroms.
+
+    Returns
+    -------
+    inelastic_pattern : ndarray
+        Inelastic scattering intensity at each q in `q_arr`.
+    """
+    parsed = xraylib.CompoundParser(formula)
+    compton_factors = np.load(base_path / 'data/IAM/Compton_Factors.npy')
+    q_inelastic = np.array([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1., 1.5, 2., 8., 15.]) * 4*np.pi
+    inelastic_scattering = np.zeros_like(q_inelastic)
+    for Z, n in zip(parsed['Elements'], parsed['nAtoms']):
+        inelastic_scattering += n * compton_factors[Z-1, :]
+    spline_interp = InterpolatedUnivariateSpline(q_inelastic, inelastic_scattering)
+    return spline_interp(q_arr)
+
 def iam_total_pattern(system, q_arr):
     """
     Compute the total X-ray scattering intensity (elastic + inelastic) 

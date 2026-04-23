@@ -1,6 +1,6 @@
 from .iam import iam_total_pattern, iam_elastic_pattern, iam_inelastic_pattern
 from .iam import iam_total_pattern_oriented, iam_elastic_pattern_oriented, iam_inelastic_pattern_oriented
-from .iam import iam_compton_spectrum
+from .iam import iam_compton_spectrum, iam_inelastic_pattern_from_formula
 
 from .geometries import SF6__CCSD_T_DHK__aug_cc_pV5Z_DK
 
