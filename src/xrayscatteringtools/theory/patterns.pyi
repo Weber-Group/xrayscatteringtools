@@ -13,7 +13,11 @@ class _PatternData(SimpleNamespace):
     method: str
     basis_set: str
     n_electrons: int
+    notes: Optional[any]
 
 SF6__CCSD__aug_cc_pVDZ: _PatternData
 SF6__MP2__aug_cc_pVDZ: _PatternData
 SF6__HF__aug_cc_pVDZ: _PatternData
+Ne__CCSD_X2C__aug_cc_pVDZ_DK: _PatternData
+Ne__CCSD_X2C__aug_cc_pVTZ_DK: _PatternData
+Ne__CCSD_X2C__aug_cc_pVQZ_DK: _PatternData

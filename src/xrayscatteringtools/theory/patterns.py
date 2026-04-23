@@ -7,7 +7,10 @@ from ..utils import invAngstroms2au, au2invAngstroms
 __all__ = [
     'SF6__CCSD__aug_cc_pVDZ',
     'SF6__MP2__aug_cc_pVDZ',
-    'SF6__HF__aug_cc_pVDZ'
+    'SF6__HF__aug_cc_pVDZ',
+    'Ne__CCSD_X2C__aug_cc_pVDZ_DK',
+    'Ne__CCSD_X2C__aug_cc_pVTZ_DK',
+    'Ne__CCSD_X2C__aug_cc_pVQZ_DK'
     ]
 def __dir__():
     # Tab completion for IPython
@@ -53,6 +56,8 @@ def _make_default_obj(f):
         attrs["I_q_elastic"] = f["I_q_elastic"][:]
     if "I_q_inelastic" in f:
         attrs["I_q_inelastic"] = f["I_q_inelastic"][:]
+    if "notes" in f.attrs:
+        attrs["notes"] = f.attrs["notes"]
     return SimpleNamespace(**attrs)
 
 def _make_default_docstring(obj):
@@ -81,6 +86,10 @@ def _make_default_docstring(obj):
         Inelastic scattering intensity values corresponding to `q`.
 """
 
+    notes_doc = ""
+    if hasattr(obj, "notes"):
+        notes_doc = obj.notes
+
     doc = f"""
     Ab initio {obj.molecule} scattering data at the {obj.method}/{obj.basis_set} level of theory.
 
@@ -103,5 +112,7 @@ def _make_default_docstring(obj):
     -----
     Calculated using Molpro & PyXSCAT Library. https://github.com/AMC-dyn/PyXSCAT
     Inverse angstroms to atomic units conversion factor used: {au2invAngstroms(1.0)} Å⁻¹/a.u.
+    {notes_doc}
     """
+    
     return doc
