@@ -1,3 +1,5 @@
+import glob
+import os
 import numpy as np
 import h5py
 from .epicsArch import EpicsArchive
@@ -99,8 +101,13 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
     data_array = []
     for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
         data = {}
-        experiment = folders[i].split('/')[6]
-        filename = f'{folders[i]}{experiment}_Run{runNumToString(runNumber)}.h5'
+        run_suffix = f'_Run{runNumToString(runNumber)}.h5'
+        matches = sorted(glob.glob(os.path.join(folders[i], f'*{run_suffix}')))
+        if len(matches) == 0:
+            raise FileNotFoundError(f"No files found in {folders[i]} matching pattern '*{run_suffix}'")
+        elif len(matches) > 1:
+            raise FileExistsError(f"Multiple files found in {folders[i]} matching pattern '*{run_suffix}': {matches}")
+        filename = matches[0]
         print('Loading: ' + filename)
         with h5py.File(filename, 'r') as f:
             # Print all keys and shapes without loading data
