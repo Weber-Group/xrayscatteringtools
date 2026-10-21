@@ -16,6 +16,7 @@ from xrayscatteringtools.utils import (
     translate_molecule,
     rotate_molecule,
     compress_ranges,
+    expand_ranges,
     ELEMENT_NUMBERS,
     ELEMENT_SYMBOLS,
     J4M,
@@ -223,6 +224,36 @@ class TestCompressRanges:
     def test_empty_raises(self):
         with pytest.raises(IndexError):
             compress_ranges([])
+
+
+class TestExpandRanges:
+    def test_single_value(self):
+        assert expand_ranges("5") == [5]
+
+    def test_range(self):
+        assert expand_ranges("1-3") == [1, 2, 3]
+
+    def test_mixed(self):
+        assert expand_ranges("1-3,5,7-9") == [1, 2, 3, 5, 7, 8, 9]
+
+    def test_whitespace(self):
+        assert expand_ranges(" 1-3 , 5 ") == [1, 2, 3, 5]
+
+    def test_negative_numbers(self):
+        assert expand_ranges("-3-1") == [-3, -2, -1, 0, 1]
+        assert expand_ranges("-5,-3--1") == [-5, -3, -2, -1]
+
+    def test_overlap_deduplicated(self):
+        assert expand_ranges("1-3,2-4") == [1, 2, 3, 4]
+
+    def test_round_trip(self):
+        nums = [-3, -2, 0, 4, 5, 6, 10]
+        assert expand_ranges(compress_ranges(nums)) == nums
+
+    @pytest.mark.parametrize("bad", ["", "abc", "1-", "1,,2", "5-3", "1-2-3"])
+    def test_invalid_raises(self, bad):
+        with pytest.raises(ValueError):
+            expand_ranges(bad)
 
 
 # ── J4M lazy loader ────────────────────────────────────────────────────

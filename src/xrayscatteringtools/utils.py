@@ -378,6 +378,48 @@ def compress_ranges(nums):
     return ",".join(parts)
 
 
+def expand_ranges(range_string):
+    """
+    Expand a compact range string into a list of integers.
+
+    Inverse of `compress_ranges`: "start-end" runs are expanded to every
+    integer in the run (inclusive) and single values are kept as-is.
+
+    Parameters
+    ----------
+    range_string : str
+        Comma-separated ranges, e.g. "1-3,5,7-9". Negative numbers are
+        supported (e.g. "-3-1" is -3 through 1). Whitespace around items is
+        ignored.
+
+    Returns
+    -------
+    list of int
+        Sorted list of unique integers, e.g. [1, 2, 3, 5, 7, 8, 9].
+
+    Raises
+    ------
+    ValueError
+        If the string is empty or contains a malformed item or a descending
+        range (e.g. "5-3").
+    """
+    items = [item.strip() for item in range_string.split(",")]
+    if not any(items):
+        raise ValueError("expand_ranges() arg is an empty string")
+
+    nums = set()
+    for item in items:
+        match = re.fullmatch(r"(-?\d+)(?:-(-?\d+))?", item)
+        if match is None:
+            raise ValueError(f"Invalid range item: {item!r}")
+        start = int(match.group(1))
+        end = int(match.group(2)) if match.group(2) is not None else start
+        if end < start:
+            raise ValueError(f"Descending range: {item!r}")
+        nums.update(range(start, end + 1))
+    return sorted(nums)
+
+
 # def lorch_window(Q, Qmax):
 #     """
 #     Calculates the Lorch window function to minimize termination ripples.

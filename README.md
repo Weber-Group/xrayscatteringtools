@@ -60,7 +60,7 @@ General-purpose utilities:
 - **Detector geometry** — `compute_q_map`, `azimuthalBinning`.
 - **Molecular transforms** — `translate_molecule`, `rotate_molecule`.
 - **Element lookups** — `element_symbol_to_number`, `element_number_to_symbol`.
-- **Other** — `compress_ranges`, `enable_underscore_cleanup`, `J4M` (lazy-loaded Jungfrau 4M geometry).
+- **Other** — `compress_ranges`, `expand_ranges`, `enable_underscore_cleanup`, `J4M` (lazy-loaded Jungfrau 4M geometry).
 
 ### `xrayscatteringtools.calib`
 Calibration and correction tools:
