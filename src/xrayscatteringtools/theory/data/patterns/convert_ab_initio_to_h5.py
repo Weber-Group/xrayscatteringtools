@@ -43,4 +43,4 @@ with h5py.File(h5_filename, "w") as f:
     f.attrs["method"] = method
     f.attrs["basis_set"] = basis_set
     f.attrs["n_electrons"] = n_electrons
-    f.attrs["notes"] = "Ne, calcualted to the CCSD+X2C/auc-cc-pVQZ+DK level of theory. The +DK adds relativistic corrections to the basis and the X2C method applies them to the Hartree-Fock original calculation used as the basis for CCSD"
+    f.attrs["notes"] = "Ne, calculated to the CCSD+X2C/aug-cc-pVQZ+DK level of theory. The +DK adds relativistic corrections to the basis and the X2C method applies them to the Hartree-Fock original calculation used as the basis for CCSD"
