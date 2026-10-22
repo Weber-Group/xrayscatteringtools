@@ -61,9 +61,8 @@ def fake_j4m():
     return _fake_j4m()
 
 
-@pytest.fixture
-def mask_maker(fake_j4m):
-    """Return a MaskMaker with all heavy I/O mocked out."""
+def _build_mask_maker(fake_j4m):
+    """Return a MaskMaker built against *fake_j4m*, with all heavy I/O mocked out."""
     fake_data = _fake_combine_runs()
     with (
         patch.object(masking_mod, "combineRuns", return_value=fake_data),
@@ -79,6 +78,27 @@ def mask_maker(fake_j4m):
     # Re-patch J4M for any subsequent calls inside methods
     mm._j4m_ref = fake_j4m
     return mm
+
+
+@pytest.fixture
+def mask_maker(fake_j4m):
+    """Return a MaskMaker with all heavy I/O mocked out."""
+    return _build_mask_maker(fake_j4m)
+
+
+@pytest.fixture
+def fake_j4m_line_t():
+    """Fake J4M with tile 4 on the line mask and the first rows of tile 5 on the T mask."""
+    ns = _fake_j4m()
+    ns.line_mask[4] = False
+    ns.t_mask = ns.t_mask.astype(float)  # stored as float in Jungfrau4M.h5
+    ns.t_mask[5, :2] = 0.0
+    return ns
+
+
+@pytest.fixture
+def mask_maker_line_t(fake_j4m_line_t):
+    return _build_mask_maker(fake_j4m_line_t)
 
 
 # ===================================================================
@@ -363,6 +383,61 @@ class TestComputeSampleAverage:
 
 
 # ===================================================================
+# Line and T masks are applied from the start
+# ===================================================================
+class TestLineTMask:
+
+    def test_built_from_j4m(self, mask_maker_line_t, fake_j4m_line_t):
+        expected = fake_j4m_line_t.line_mask.astype(bool) & fake_j4m_line_t.t_mask.astype(bool)
+        assert mask_maker_line_t.line_t_mask.dtype == bool
+        np.testing.assert_array_equal(mask_maker_line_t.line_t_mask, expected)
+
+    def test_user_masks_start_all_true(self, mask_maker_line_t):
+        """The line and T pixels are kept out of dark_mask, so its masked fraction only counts dark cuts."""
+        assert mask_maker_line_t.dark_mask.all()
+
+    def test_sample_average_excludes_line_t(self, mask_maker_line_t, fake_j4m_line_t):
+        with patch.object(masking_mod, "J4M", fake_j4m_line_t):
+            avg = mask_maker_line_t._compute_sample_average(apply_masks=True)
+        assert np.all(np.isnan(avg[4]))
+        assert np.all(np.isnan(avg[5, :2]))
+        assert not np.any(np.isnan(avg[mask_maker_line_t.line_t_mask]))
+
+    def test_dark_bounds_ignore_line_t(self, mask_maker_line_t, fake_j4m_line_t):
+        """Extreme values on line/T pixels must not move the recommended dark bounds."""
+        mm = mask_maker_line_t
+        mm.dark_data["Sums/jungfrau4M_calib_dropped"][4] = 1e9
+        with (
+            patch.object(masking_mod, "J4M", fake_j4m_line_t),
+            patch("matplotlib.pyplot.show"),
+            patch("builtins.input", return_value=""),  # accept the recommended bounds
+        ):
+            mm.process_dark(plotting=False)
+        n_dark = np.sum(~mm.dark_data["lightStatus/xray"].astype(bool))
+        dark_arcsinh = np.arcsinh(mm.dark_data["Sums/jungfrau4M_calib_dropped"] / n_dark)
+        lb, ub = np.percentile(dark_arcsinh[mm.line_t_mask], [0.5, 99.5])
+        np.testing.assert_array_equal(mm.dark_mask, (dark_arcsinh >= lb) & (dark_arcsinh <= ub))
+
+    def test_background_bounds_ignore_line_t(self, mask_maker_line_t, fake_j4m_line_t):
+        """Extreme values on line/T pixels must not move the recommended background bound."""
+        mm = mask_maker_line_t
+        mm.background_data["Sums/jungfrau4M_calib_xrayOn_thresADU1"][4] = 1e9
+        with (
+            patch.object(masking_mod, "J4M", fake_j4m_line_t),
+            patch("matplotlib.pyplot.show"),
+            patch("builtins.input", return_value=""),
+        ):
+            mm.process_background(plotting=False)
+        n_on = np.sum(mm.background_data["lightStatus/xray"].astype(bool))
+        bkg = mm.background_data["Sums/jungfrau4M_calib_xrayOn_thresADU1"] / n_on
+        ub = np.percentile(bkg[mm.line_t_mask], 99)
+        # If the line/T pixels counted, the 1e9 values would set the bound and no valid pixel would be cut
+        cut = ~mm.background_mask[mm.line_t_mask]
+        assert cut.any()
+        np.testing.assert_array_equal(cut, bkg[mm.line_t_mask] > ub)
+
+
+# ===================================================================
 # combine_masks
 # ===================================================================
 class TestCombineMasks:
@@ -419,16 +494,17 @@ class TestCombineMasks:
             mask_maker.combine_masks(plotting=False)
         assert not np.any(mask_maker.cmask[3])
 
-    def test_line_mask_false_propagates(self, mask_maker, fake_j4m):
-        """If line_mask has a False pixel, cmask should too."""
-        fake_j4m.line_mask[4, 0, 0] = False
+    def test_line_and_t_mask_propagate(self, mask_maker_line_t, fake_j4m_line_t):
+        """Line- and T-masked pixels are masked in cmask."""
         with (
-            patch.object(masking_mod, "J4M", fake_j4m),
+            patch.object(masking_mod, "J4M", fake_j4m_line_t),
             patch("matplotlib.pyplot.show"),
             patch.object(masking_mod, "plot_j4m", return_value=MagicMock()),
         ):
-            mask_maker.combine_masks(plotting=False)
-        assert not mask_maker.cmask[4, 0, 0]
+            mask_maker_line_t.combine_masks(plotting=False)
+        assert not np.any(mask_maker_line_t.cmask[4])
+        assert not np.any(mask_maker_line_t.cmask[5, :2])
+        assert np.all(mask_maker_line_t.cmask[5, 2:])
 
     def test_cmask_dtype_bool(self, mask_maker, fake_j4m):
         with (
@@ -481,6 +557,30 @@ class TestProcessSample:
         ):
             mask_maker.process_sample(n_std=100, plotting=False, n_q_bins=5, auto_accept_threshold=0.0)
         assert mask_maker.sample_mask.shape == _SHAPE
+
+    @pytest.mark.parametrize("manual_check, expected_prompts", [
+        (None, 2),     # only q_idx 0 is reviewed (lower + upper bound)
+        ([2], 4),      # q_idx 0 and the forced q_idx 2
+        ([0, 3], 4),   # q_idx 0 is already reviewed, so only q_idx 3 adds prompts
+    ])
+    def test_manual_check_forces_review(self, mask_maker, fake_j4m, manual_check, expected_prompts):
+        mock_fig = MagicMock()
+        mock_axes = (MagicMock(), MagicMock())
+        mock_input = MagicMock(side_effect=["-1e30", "1e30"] * 10)
+        with (
+            patch.object(masking_mod, "J4M", fake_j4m),
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.subplots", return_value=(mock_fig, mock_axes)),
+            patch.object(masking_mod, "plot_j4m", return_value=MagicMock()),
+            patch.object(masking_mod, "compute_q_map", return_value=np.random.default_rng(7).random(_SHAPE)),
+            patch.object(masking_mod, "thompson_correction", return_value=np.ones(_SHAPE)),
+            patch("builtins.input", mock_input),
+        ):
+            mask_maker.process_sample(
+                n_std=100, plotting=False, n_q_bins=5,
+                auto_accept_threshold=0.0, manual_check=manual_check,
+            )
+        assert mock_input.call_count == expected_prompts
 
 
 # ===================================================================

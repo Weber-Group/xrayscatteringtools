@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..utils import J4M, keV2Angstroms, compute_q_map
+from ..utils import J4M, keV2Angstroms
+from ..azimuthal import compute_q_map
 from ..io import combineRuns
 import numpy as np
 import matplotlib.pyplot as plt
@@ -44,6 +45,10 @@ _AUTO_ACCEPT_THRESHOLD = 0.95
 class MaskMaker:
     """Create and manage masks for Jungfrau 4M X-ray scattering data.
 
+    The detector's line and T masks (:attr:`line_t_mask`) are applied from
+    the start, so the known-bad pixels never enter the dark, background, or
+    sample statistics.
+
     The workflow is:
         1. Instantiate with experiment info and run numbers.
         2. Call :meth:`process_dark` to mask hot / dead pixels.
@@ -71,6 +76,8 @@ class MaskMaker:
 
     Attributes
     ----------
+    line_t_mask : np.ndarray
+        Fixed boolean mask of the detector's line and T pixels (``J4M.line_mask & J4M.t_mask``).
     dark_mask : np.ndarray
         Boolean mask derived from dark data.
     background_mask : np.ndarray
@@ -125,6 +132,9 @@ class MaskMaker:
             sample_run_number, data_path, _KEYS_TO_COMBINE, _KEYS_TO_SUM, _KEYS_TO_CHECK, **load_kw
         )
 
+        # Fixed detector mask (line and T pixels), applied from the start
+        self.line_t_mask: np.ndarray = J4M.line_mask.astype(bool) & J4M.t_mask.astype(bool)
+
         # Initialize masks (all pixels valid)
         self.dark_mask: np.ndarray = np.ones_like(J4M.x, dtype=bool)
         self.background_mask: np.ndarray = np.ones_like(J4M.x, dtype=bool)
@@ -173,8 +183,8 @@ class MaskMaker:
         Parameters
         ----------
         apply_masks : bool
-            If ``True``, pixels failing *dark*, *background*, and *polygon*
-            masks are set to ``NaN``.
+            If ``True``, pixels failing the *line/T*, *dark*, *background*,
+            and *polygon* masks are set to ``NaN``.
 
         Returns
         -------
@@ -184,7 +194,7 @@ class MaskMaker:
         n_shots = np.sum(self.sample_data['lightStatus/xray'].astype(bool))
         avg = np.array(self.sample_data['Sums/jungfrau4M_calib_xrayOn_thresADU1'] / n_shots)
         if apply_masks:
-            combined = self.dark_mask & self.background_mask & self.poly_mask
+            combined = self.line_t_mask & self.dark_mask & self.background_mask & self.poly_mask
             avg = np.where(combined, avg, np.nan)
         return avg
 
@@ -227,11 +237,13 @@ class MaskMaker:
             dark_avg = np.array(self.dark_data['Sums/jungfrau4M_calib_dropped'] / dark_num_shots)
 
         dark_arcsinh = np.arcsinh(dark_avg)
+        # Statistics only from pixels outside the line and T masks
+        dark_arcsinh_valid = dark_arcsinh[self.line_t_mask]
 
         if plotting:
             fig, axes = plt.subplots(1, 2, figsize=(12, 6))
             for ax, yscale in zip(axes, ['log', 'linear']):
-                ax.hist(dark_arcsinh.flatten(), bins=500)
+                ax.hist(dark_arcsinh_valid, bins=500)
                 ax.set_title(f'Run {self.dark_run_number} Dark Image Histogram')
                 ax.set_yscale(yscale)
                 ax.set_xlabel('arcsinh(Intensity)')
@@ -241,7 +253,7 @@ class MaskMaker:
             plt.show()
 
         # Determine recommended bounds
-        recommended_bounds = np.percentile(dark_arcsinh.flatten(), [_DARK_PERCENTILE_LO, _DARK_PERCENTILE_HI])
+        recommended_bounds = np.percentile(dark_arcsinh_valid, [_DARK_PERCENTILE_LO, _DARK_PERCENTILE_HI])
         if lb is None or ub is None:
             print('Determine intensity cutoffs for dark mask (leave blank to use recommended bounds):')
             lb = float(input(f'Enter lower bound for dark mask (recommended: {recommended_bounds[0]:.4f}): ') or recommended_bounds[0])
@@ -256,7 +268,7 @@ class MaskMaker:
         self.dark_mask = np.logical_and(self.dark_mask,(dark_arcsinh >= lb) & (dark_arcsinh <= ub))
 
         if plotting:
-            dark_avg_masked = np.where(self.dark_mask, dark_avg, np.nan)
+            dark_avg_masked = np.where(self.line_t_mask & self.dark_mask, dark_avg, np.nan)
 
             fig, axes = plt.subplots(1, 3, figsize=(18, 8))
             self._plot_j4m_panel(axes[0], self.dark_mask, 'Mask from Dark', fig, vmin=0, vmax=1)
@@ -291,7 +303,7 @@ class MaskMaker:
         # Compute average background image (xray-on frames)
         bkg_num_shots = np.sum(self.background_data['lightStatus/xray'].astype(bool))
         bkg_avg = np.array(self.background_data['Sums/jungfrau4M_calib_xrayOn_thresADU1'] / bkg_num_shots)
-        bkg_avg_darkmask = np.where(self.dark_mask, bkg_avg, np.nan)
+        bkg_avg_darkmask = np.where(self.line_t_mask & self.dark_mask, bkg_avg, np.nan)
 
         if plotting:
             fig, axes = plt.subplots(1, 2, figsize=(12, 6))
@@ -441,6 +453,7 @@ class MaskMaker:
         phi0: float = 0,
         n_q_bins: int = _N_Q_BINS,
         auto_accept_threshold: float = _AUTO_ACCEPT_THRESHOLD,
+        manual_check: Optional[list[int]] = None,
         plotting: bool = True,
     ) -> None:
         """Create a mask from per-ring intensity statistics on the sample data.
@@ -476,9 +489,13 @@ class MaskMaker:
             Number of q bins for ring-by-ring masking.
         auto_accept_threshold : float, optional
             Fraction of surviving pixels above which a ring is auto-accepted.
+        manual_check : list of int, optional
+            Indices of q bins to always review manually, even if they would
+            be auto-accepted.  Default is None (no forced manual checks).
         plotting : bool, optional
             Show diagnostic plots.
         """
+        manual_check = set(manual_check) if manual_check is not None else set()
         self.sample_mask = np.ones_like(J4M.x, dtype=bool)
 
         # Average sample image with current masks applied
@@ -509,7 +526,7 @@ class MaskMaker:
             ring_mask[valid] = (q_ring[valid] >= lower_bound) & (q_ring[valid] <= upper_bound)
 
             kept_frac = np.sum(ring_mask[ring_sel]) / np.sum(ring_sel)
-            if kept_frac > auto_accept_threshold and q_idx != 0:
+            if (kept_frac > auto_accept_threshold and q_idx != 0) and q_idx not in manual_check:
                 if self.verbose:
                     logger.info(
                         'Q bin %.3f: auto-masked %.2f%%',
@@ -719,8 +736,7 @@ class MaskMaker:
             & self.background_mask
             & self.poly_mask
             & self.sample_mask
-            & J4M.line_mask.astype(bool)
-            & J4M.t_mask.astype(bool)
+            & self.line_t_mask
         )
 
         if plotting:
@@ -733,7 +749,7 @@ class MaskMaker:
                 (ax[0, 0], self.dark_mask, 'Dark Mask'),
                 (ax[0, 1], self.background_mask, 'Background Mask'),
                 (ax[1, 0], self.sample_mask, 'Sample Mask'),
-                (ax[1, 1], J4M.line_mask * J4M.t_mask, 'Line and T Mask'),
+                (ax[1, 1], self.line_t_mask, 'Line and T Mask'),
                 (ax[2, 0], self.poly_mask, 'Polygon Mask'),
             ]
             for a, data, title in mask_panels:

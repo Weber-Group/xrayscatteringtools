@@ -1,41 +1,31 @@
-from scipy.interpolate import InterpolatedUnivariateSpline
 from ..utils import q2theta
 import numpy as np
-import pathlib
-_data_path = pathlib.Path(__file__).parent / "data"
-import h5py
+import xraylib
 
-
-def _load_attenuation_table(material_key):
-    """Load attenuation length table from HDF5 and return (E_values, length) arrays."""
-    with h5py.File(_data_path / "attenuation_lengths.h5", 'r') as f:
-        E_values = f['E_values'][:]
-        length = f[f'{material_key}_length'][:]
-    return E_values, length
 
 def correction_factor(
-    q_arr, 
-    keV, 
-    L=2.4e-3, 
-    tSi=318.5e-6, 
-    tK=8e-6, 
-    tAl=4.5e-6, 
-    tBe=100e-6, 
-    rBe=250e-6, 
-    tP=125e-6, 
+    q_arr,
+    keV,
+    L=2.4e-3,
+    tSi=318.5e-6,
+    tK=8e-6,
+    tAl=4.5e-6,
+    tBe=100e-6,
+    rBe=125e-6,
+    tP=125e-6,
     rP=125e-6
 ):
     """
     Calculate the total X-ray scattering correction factor for a given setup.
-    
-    The total correction factor accounts for absorption and scattering 
-    from different materials in the beam path, including Si, Kapton, 
+
+    The total correction factor accounts for absorption and scattering
+    from different materials in the beam path, including Si, Kapton,
     Al, Be, and the gas cell itself.
 
     Parameters
     ----------
-    qbins : array-like
-        Array of momentum transfer (q) values in Å⁻¹ or equivalent units.
+    q_arr : array-like
+        Array of momentum transfer (q) values in Å⁻¹.
     keV : float
         Photon energy in keV.
     L : float, optional
@@ -49,24 +39,26 @@ def correction_factor(
     tBe : float, optional
         Thickness of beryllium in meters. Default is 100e-6 m.
     rBe : float, optional
-        Radius of the Be window in meters. Default is 250e-6 m.
+        Hole radius of the Be exit pinhole in meters. Default is 125e-6 m (250 µm diameter).
     tP : float, optional
-        Thickness of the gas cell in meters. Default is 125e-6 m.
+        Thickness of the gas cell platinum pinhole in meters. Default is 125e-6 m.
     rP : float, optional
-        Hole radius of the gas cell platinum pinhole in meters. Default is 125e-6 m.
+        Hole radius of the gas cell platinum pinhole in meters. Default is 125e-6 m (250 µm diameter).
 
     Returns
     -------
     numpy.ndarray
         Array of total correction factors corresponding to each q value.
-    
+
     Notes
     -----
-    The total correction factor is computed as the product of individual 
+    The total correction factor is computed as the product of individual
     material corrections:
-    
-        total_correction = Si_correction * KaptonHN_correction * 
+
+        total_correction = Si_correction * KaptonHN_correction *
                            Al_correction * Be_correction * cell_correction
+
+    See Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
     """
     q_arr = np.asarray(q_arr, dtype=float)
     if keV <= 0:
@@ -167,7 +159,7 @@ def Al_correction(q_arr, keV, tAl=4.5e-6):
     return nAl
 
 
-def Be_correction(q_arr, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
+def Be_correction(q_arr, keV, tBe=100e-6, rBe=125e-6, L=2.4e-3):
     """
     Calculate the Beryllium correction factor considering window geometry.
 
@@ -180,7 +172,7 @@ def Be_correction(q_arr, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     tBe : float, optional
         Beryllium thickness in meters. Default is 100e-6 m.
     rBe : float, optional
-        Radius of the Be window in meters. Default is 250e-6 m.
+        Hole radius of the Be exit pinhole in meters. Default is 125e-6 m (250 µm diameter).
     L : float, optional
         Gas cell length in meters. Default is 2.4e-3 m.
 
@@ -199,7 +191,8 @@ def Be_correction(q_arr, keV, tBe=100e-6, rBe=250e-6, L=2.4e-3):
     thetas = q2theta(q_arr, keV)  # same shape as q_arr
 
     # Compute partial path length through Be window
-    xBe = np.minimum(rBe / np.tan(thetas), L)
+    with np.errstate(divide='ignore'):
+        xBe = np.minimum(rBe / np.tan(thetas), L)
 
     # Avoid division by zero for theta=0
     xBe = np.nan_to_num(xBe, nan=L, posinf=L, neginf=L)
@@ -219,9 +212,9 @@ def cell_correction(q_arr, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
     keV : float
         Photon energy in keV.
     tP : float, optional
-        Gas cell thickness in meters. Default is 125e-6 m.
+        Thickness of the gas cell platinum pinhole in meters. Default is 125e-6 m.
     rP : float, optional
-        Radius of the gas cell window in meters. Default is 125e-6 m.
+        Hole radius of the gas cell platinum pinhole in meters. Default is 125e-6 m (250 µm diameter).
     L : float, optional
         Gas cell length in meters. Default is 2.4e-3 m.
 
@@ -234,29 +227,38 @@ def cell_correction(q_arr, keV, tP=125e-6, rP=125e-6, L=2.4e-3):
     -----
     Accounts for the angle-dependent path length and geometry of the gas cell.
     """
+    q_arr = np.asarray(q_arr, dtype=float)
     # Compute scattering angles
     thetas = q2theta(q_arr, keV)  # same shape as q_arr
-    
-    # Precompute helper array
-    xmax = tP - rP / np.tan(thetas)
-    
-    # Mask to separate the two cases
-    cond = np.tan(thetas) >= (rP / tP)
-    
-    # Initialize output
-    nCell = np.empty_like(q_arr, dtype=float)
-    
-    # Case 1: tan(theta) >= rP/tP
-    nCell[cond] = 1 + (rP / (L * np.tan(thetas[cond])))
-    
-    # Case 2: tan(theta) < rP/tP
-    num = tP + (rP * xmax[~cond]) / (xmax[~cond] - rP)
-    nCell[~cond] = 1 + num / L
-    
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        # Precompute helper array
+        xmax = tP - rP / np.tan(thetas)
+
+        # Mask to separate the two cases
+        cond = np.tan(thetas) >= (rP / tP)
+
+        # Initialize output
+        nCell = np.empty_like(q_arr, dtype=float)
+
+        # Case 1: tan(theta) >= rP/tP
+        nCell[cond] = 1 + (rP / (L * np.tan(thetas[cond])))
+
+        # Case 2: tan(theta) < rP/tP
+        num = tP + (rP * xmax[~cond]) / (xmax[~cond] - rP)
+        nCell[~cond] = 1 + num / L
+
     # Handle any division-by-zero or invalid values safely
     nCell = np.nan_to_num(nCell, nan=1.0, posinf=1.0, neginf=1.0)
     return nCell
 
+
+# Attenuation lengths come from xraylib. The mass attenuation coefficient (cm^2/g) times the
+# density (g/cm^3) gives the linear attenuation coefficient (1/cm); its inverse, times 1e-2,
+# is the attenuation length in meters. The windows use the total cross section, since
+# scattering also removes photons from the path. The Si sensor uses photoabsorption only,
+# since only absorbed photons deposit charge. xraylib takes one energy at a time, so the
+# functions are wrapped in np.vectorize to also accept arrays.
 
 def Si_attenuation_length(keV):
     """
@@ -264,117 +266,104 @@ def Si_attenuation_length(keV):
 
     Parameters
     ----------
-    keV : float
+    keV : float or array-like
         Photon energy in keV.
 
     Returns
     -------
-    float
+    float or numpy.ndarray
         Attenuation length of Silicon in meters.
 
     Notes
     -----
-    Uses a spline interpolation of tabulated data. The input energy in keV
-    is converted to eV for the interpolation, and the returned value is converted
-    from microns to meters.
+    Photoabsorption only (xraylib ``CS_Photo``), density 2.33 g/cm^3.
     """
-    E_values, length = _load_attenuation_table('Si')
-    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
-    return Mu_Spline(keV*1000) * 1e-6  # Convert to m
+    keV = np.asarray(keV, dtype=float)
+    return 1e-2 / (np.vectorize(xraylib.CS_Photo)(14, keV) * 2.33)
 
 def Al_attenuation_length(keV):
     """
-    Calculate the X-ray attenuation length of Aluminum (Al) for a given photon energy.
+    Calculate the X-ray attenuation length of Aluminum (Al) in meters.
 
     Parameters
     ----------
-    keV : float
+    keV : float or array-like
         Photon energy in keV.
 
     Returns
     -------
-    float
+    float or numpy.ndarray
         Attenuation length of Al in meters.
 
     Notes
     -----
-    Uses a spline interpolation of tabulated data to compute the attenuation
-    length. Tabulated values are converted from microns to meters.
+    Total cross section (xraylib ``CS_Total``), density 2.699 g/cm^3.
     """
-    E_values, length = _load_attenuation_table('Al')
-    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
-    return Mu_Spline(keV*1000) * 1e-6 # Convert to meters
+    keV = np.asarray(keV, dtype=float)
+    return 1e-2 / (np.vectorize(xraylib.CS_Total)(13, keV) * 2.699)
 
 def Be_attenuation_length(keV):
     """
-    Calculate the X-ray attenuation length of Beryllium (Be) for a given photon energy.
+    Calculate the X-ray attenuation length of Beryllium (Be) in meters.
 
     Parameters
     ----------
-    keV : float
+    keV : float or array-like
         Photon energy in keV.
 
     Returns
     -------
-    float
+    float or numpy.ndarray
         Attenuation length of Be in meters.
 
     Notes
     -----
-    Computed via spline interpolation of tabulated attenuation data (in microns),
-    which is converted to meters.
+    Total cross section (xraylib ``CS_Total``), density 1.848 g/cm^3.
     """
-    E_values, length = _load_attenuation_table('Be')
-    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
-    return Mu_Spline(keV*1000) * 1e-6  # Convert to m
+    keV = np.asarray(keV, dtype=float)
+    return 1e-2 / (np.vectorize(xraylib.CS_Total)(4, keV) * 1.848)
 
 def KaptonHN_attenuation_length(keV):
     """
-    Calculate the X-ray attenuation length of Kapton HN for a given photon energy.
+    Calculate the X-ray attenuation length of Kapton HN in meters.
 
     Parameters
     ----------
-    keV : float
+    keV : float or array-like
         Photon energy in keV.
 
     Returns
     -------
-    float
+    float or numpy.ndarray
         Attenuation length of Kapton HN in meters.
 
     Notes
     -----
-    Uses spline interpolation of tabulated attenuation lengths (in microns),
-    then converts them to meters.
+    Total cross section (xraylib ``CS_Total_CP``) of C22H10N2O5, density 1.42 g/cm^3.
     """
-    E_values, length = _load_attenuation_table('KaptonHN')
-    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
-    return Mu_Spline(keV*1000) * 1e-6  # Convert to m
+    keV = np.asarray(keV, dtype=float)
+    return 1e-2 / (np.vectorize(xraylib.CS_Total_CP)("C22H10N2O5", keV) * 1.42)
 
 def Zn_attenuation_length(keV):
     """
-    Calculate the X-ray attenuation length of Zinc (Zn) for a given photon energy.
+    Calculate the X-ray attenuation length of Zinc (Zn) in meters.
 
     Parameters
     ----------
-    keV : float
+    keV : float or array-like
         Photon energy in keV.
 
     Returns
     -------
-    float
+    float or numpy.ndarray
         Attenuation length of Zn in meters.
 
     Notes
     -----
-    Uses spline interpolation of tabulated attenuation lengths (in microns),
-    then converts them to meters.
+    Total cross section (xraylib ``CS_Total``), density 7.14 g/cm^3.
     """
-    with h5py.File(f"{_data_path}/Zn_attenuation_length.h5", 'r') as f:
-        E_values = f['E_values'][:]
-        length = f['length'][:]
-    Mu_Spline = InterpolatedUnivariateSpline(E_values, length)
-    return Mu_Spline(keV*1000) * 1e-6  # Convert to m
+    keV = np.asarray(keV, dtype=float)
+    return 1e-2 / (np.vectorize(xraylib.CS_Total)(30, keV) * 7.14)
 
 def J4M_efficiency(theta, keV, tSi = 318.5e-6, tAl = 4.5e-6, tK = 8e-6):
     """
@@ -400,6 +389,6 @@ def J4M_efficiency(theta, keV, tSi = 318.5e-6, tAl = 4.5e-6, tK = 8e-6):
 
     Notes
     -----
-    Uses spline interpolation of tabulated values to calculate the detector efficiency.
+    The fraction absorbed in the Si sensor times the transmission through the Kapton and Al layers.
     """
     return (1-np.exp(-tSi /(np.cos(theta) * Si_attenuation_length(keV))))*(np.exp(-tK /(np.cos(theta) *KaptonHN_attenuation_length(keV)))) * (np.exp(-tAl /(np.cos(theta) * Al_attenuation_length(keV))))

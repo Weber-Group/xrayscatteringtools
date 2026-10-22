@@ -1,3 +1,5 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 from scipy.optimize import curve_fit
@@ -16,7 +18,9 @@ def run_geometry_calibration(
         polarization = 0,
         mask_center=True,
         mask_center_size=7500,
-        bounds = ([0, -10_000, -10_000, 30_000], [np.inf, 10_000, 10_000, 150_000])
+        bounds = ([0, -10_000, -10_000, 30_000], [np.inf, 10_000, 10_000, 150_000]),
+        fit_background=False,
+        n_threads=None,
         ):
     """
     Perform geometry calibration on a raw detector image using a theoretical scattering pattern.
@@ -45,23 +49,31 @@ def run_geometry_calibration(
         Initial guess for fit parameters:
         - 'amplitude' : float, scaling of the intensity
         - 'x0', 'y0', 'z0' : float, initial guesses for detector geometry
+        - 'background' : float, only used when `fit_background` is True. Defaults to 0 if missing.
         Default: {'amplitude': 1, 'x0': 0, 'y0': 0, 'z0': 90000}.
     polarization : float, optional
         Polarization direction (-pi/2 to pi/2). Default is 0 (horizontally polarized).
     mask_center : bool, optional
         If True, exclude pixels near the center from the fit. Default is True.
     mask_center_size : float, optional
-        Radius (in pixels) of the excluded central region. Default is 7500.
-    fit_bounds : tuple of array_like, optional
-        Lower and upper bounds for the fit parameters. Default is 
-        ([0, -10000, -10000, 30000, -π/2], [inf, 10000, 10000, 150000, π/2]).
+        Radius (in the units of `x` and `y`, i.e. microns) of the excluded central region. Default is 7500.
+    bounds : tuple of array_like, optional
+        Lower and upper bounds for [amplitude, x0, y0, z0]. Default is
+        ([0, -10000, -10000, 30000], [inf, 10000, 10000, 150000]). With `fit_background`,
+        a fifth entry may be given for the background; if it is left out, the background is unbounded.
+    fit_background : bool, optional
+        If True, also fit a flat, unpolarized background (see `model`). Default is False.
+    n_threads : int or None, optional
+        Number of threads used to evaluate the model. The result does not depend on it.
+        Default None uses the available CPU cores, up to 32.
 
     Returns
     -------
     fit : ndarray
         3D array representing the fitted detector image (reshaped to match input dimensions).
     popt : ndarray
-        Optimized fit parameters: [amplitude, x0, y0, z0]. In units of microns.
+        Optimized fit parameters: [amplitude, x0, y0, z0], plus background at the end when
+        `fit_background` is True. Geometry in units of microns, background in the units of `theory_Iq`.
     pcov : ndarray
         Covariance matrix of the optimized parameters.
 
@@ -76,28 +88,43 @@ def run_geometry_calibration(
     Examples
     --------
     >>> fit, popt, pcov = run_geometry_calibration(raw_image, x, y, mask, theory_q, theory_Iq, 12.7)
+    >>> fit, popt, pcov = run_geometry_calibration(raw_image, x, y, mask, theory_q, theory_Iq, 12.7, fit_background=True)
     """
     # Step one: generate an interpolation for the theory pattern.
     theory_interpolation = InterpolatedUnivariateSpline(theory_q, theory_Iq, ext=3) # Extrapolation 3. Returns Boundary value if outside of range.
 
     # Step two: Define initial guess, bounds, and fitting function using a wrapper
     p0 = [initial_guess['amplitude'], initial_guess['x0'], initial_guess['y0'], initial_guess['z0']]
-    def fitting_function(xy, amplitude, x0, y0, z0):
-        return model(xy, amplitude, x0, y0, z0, polarization, photon_energy_keV, theory_interpolation)
+    if fit_background:
+        p0.append(initial_guess.get('background', 0))
+        if len(bounds[0]) == 4:
+            bounds = (list(bounds[0]) + [-np.inf], list(bounds[1]) + [np.inf])
+    def fitting_function(xy, amplitude, x0, y0, z0, background=0.0):
+        return model(xy, amplitude, x0, y0, z0, polarization, photon_energy_keV, theory_interpolation, background=background)
 
     # Step three: Masking and formatting variables
     center_mask = np.ones_like(raw_image, dtype=bool)
     if mask_center:
         center_mask[np.sqrt(x**2 + y**2) < mask_center_size] = False
-        
+
     masked_data = np.ravel(raw_image[mask & center_mask])
     x_masked = np.ravel(x[mask & center_mask])
     y_masked = np.ravel(y[mask & center_mask])
     xy_masked = [x_masked, y_masked]
 
-    # Step four: fitting the data
-    popt, pcov = curve_fit(fitting_function, xy_masked, masked_data, p0=p0, bounds=bounds)
-    fit = fitting_function([np.ravel(x), np.ravel(y)], *popt).reshape(raw_image.shape)
+    # Step four: fitting the data. The model is evaluated on chunks of pixels in parallel threads.
+    # numpy releases the GIL during array math, so this is much faster and gives identical results.
+    if n_threads is None:
+        n_threads = min(len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count(), 32)
+    with ThreadPoolExecutor(n_threads) as pool:
+        def threaded_fitting_function(xy, *params):
+            x_chunks = np.array_split(xy[0], n_threads)
+            y_chunks = np.array_split(xy[1], n_threads)
+            results = pool.map(lambda x_chunk, y_chunk: fitting_function([x_chunk, y_chunk], *params), x_chunks, y_chunks)
+            return np.concatenate(list(results))
+
+        popt, pcov = curve_fit(threaded_fitting_function, xy_masked, masked_data, p0=p0, bounds=bounds)
+        fit = threaded_fitting_function([np.ravel(x), np.ravel(y)], *popt).reshape(raw_image.shape)
     return fit, popt, pcov
 
 def model(
@@ -114,10 +141,13 @@ def model(
         do_angle_of_scattering_correction=True,
         do_geometry_correction_units=False,
         dx=75,
-        dy=75
+        dy=75,
+        background=0.0,
         ):
     """
     Calculate the theoretical detector image for given geometry parameters.
+
+        fit = amplitude * (I_theory(q) * thompson + background) * geometry * angle_of_scattering
 
     Parameters
     ----------
@@ -143,6 +173,10 @@ def model(
         If True, apply geometry accounting for proper solid angle subtension. Default is False.
     dx, dy : float, optional
         Pixel size in microns for geometry correction with units. Default is 75 microns. If do_geometry_correction_units is False, these are ignored.
+    background : float, optional
+        Flat background in the units of the theory pattern. It is unpolarized, so it does not get
+        the Thompson correction, but it is detected like the scattered photons, so it does get the
+        geometry and angle-of-scattering corrections. Default is 0 (no background).
 
     Returns
     -------
@@ -164,18 +198,21 @@ def model(
     theta_matrix = np.arctan(r_matrix/z0)
     q_matrix = theta2q(theta_matrix, photon_energy_keV)
 
-    # Calculate corrections
-    corrections = np.ones_like(q_matrix)
+    # Scattered signal (polarized), plus the unpolarized background
+    fit = theory_interpolation(q_matrix)
     if do_thompson_correction:
-        corrections *= thompson_correction(centered_x, centered_y, z0, phi0) # Polarization
+        fit *= thompson_correction(centered_x, centered_y, z0, phi0) # Polarization
+    if background:
+        fit += background
+
+    # Calculate corrections
     if do_geometry_correction:
-        corrections *= geometry_correction(centered_x, centered_y, z0) # Geometry
+        fit *= geometry_correction(centered_x, centered_y, z0) # Geometry
     if do_angle_of_scattering_correction:
-        corrections *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
+        fit *= correction_factor(q_matrix, photon_energy_keV) # Angle-Of-Scattering, Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
     if do_geometry_correction_units:
-        corrections *= geometry_correction_units(centered_x, centered_y, z0, dx, dy) # Geometry correctly accounting for solid angle subtension per pixel
-    fit = amplitude * theory_interpolation(q_matrix) * corrections
-    return fit
+        fit *= geometry_correction_units(centered_x, centered_y, z0, dx, dy) # Geometry correctly accounting for solid angle subtension per pixel
+    return amplitude * fit
 
 def thompson_correction(x, y, z0, phi0):
     """
@@ -199,12 +236,14 @@ def thompson_correction(x, y, z0, phi0):
     -----
     See Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
 
+    The correction is sin^2(phi) + cos^2(theta) cos^2(phi) = 1 - sin^2(theta) cos^2(phi), with
+    theta = arctan(r / z0) and phi = arctan2(y, x) + phi0. Using sin^2(theta) = r^2 / (r^2 + z0^2)
+    and cos(phi) = (x cos(phi0) - y sin(phi0)) / r, this is computed without any trig on the pixel arrays:
+
+        1 - (x cos(phi0) - y sin(phi0))^2 / (x^2 + y^2 + z0^2)
     """
-    # Calculate the Thompson scattering correction factor
-    r_matrix = np.sqrt(x**2 + y**2)
-    theta = np.arctan(r_matrix/z0)
-    phi = np.arctan2(y, x) + phi0
-    correction = np.sin(phi)**2+np.cos(theta)**2*np.cos(phi)**2
+    x_rotated = x * np.cos(phi0) - y * np.sin(phi0)
+    correction = 1 - x_rotated**2 / (x**2 + y**2 + z0**2)
     return correction
 
 def geometry_correction(x, y, z0):
@@ -229,17 +268,16 @@ def geometry_correction(x, y, z0):
     The inverse square law accounts for cos^2(theta), and the effective area is another cos(theta).
     See Lingyu Ma et al 2024 J. Phys. B: At. Mol. Opt. Phys. 57 205602
 
-
+    cos(theta) = z0 / sqrt(x^2 + y^2 + z0^2), so no trig is needed on the pixel arrays.
     """
-    r_matrix = np.sqrt(x**2 + y**2)
-    theta = np.arctan(r_matrix / z0)
-    correction = np.cos(theta) ** 3
+    cos_theta = z0 / np.sqrt(x**2 + y**2 + z0**2)
+    correction = cos_theta * cos_theta * cos_theta
     return correction
 
 def geometry_correction_units(x, y, z0, dx, dy):
     """
     Compute geometric correction factor z0^2 cos^3(theta) / dxdy for a detector, accounting for pixel area and distance units.
-    
+
     Parameters
     ----------
     x, y : ndarray
@@ -248,7 +286,7 @@ def geometry_correction_units(x, y, z0, dx, dy):
         Detector distance along beam axis.
     dx, dy : float
         Pixel size in x and y directions.
-    
+
     Returns
     -------
     correction : ndarray
@@ -259,7 +297,6 @@ def geometry_correction_units(x, y, z0, dx, dy):
     The geometry correction comes from the inverse square law and the effective area of the pixel.
     The inverse square law accounts for z^2 cos^2(theta), and the effective area is cos(theta)/dxdy.
     """
-    r_matrix = np.sqrt(x**2 + y**2)
-    theta = np.arctan(r_matrix / z0)
-    correction = np.cos(theta)**3 * (dx * dy) / z0**2
+    cos_theta = z0 / np.sqrt(x**2 + y**2 + z0**2)
+    correction = cos_theta * cos_theta * cos_theta * (dx * dy) / z0**2
     return correction
