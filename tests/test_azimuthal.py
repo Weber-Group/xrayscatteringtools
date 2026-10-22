@@ -211,9 +211,10 @@ class TestCreateJ4mIntegrator:
     """Tests for create_J4m_integrator."""
 
     def test_returns_azimuthal_integrator(self):
-        from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+        # Check by name: the class lives in pyFAI.integrator.azimuthal on
+        # pyFAI >= 2025.1 and in pyFAI.azimuthalIntegrator before that.
         ai = create_J4m_integrator()
-        assert isinstance(ai, AzimuthalIntegrator)
+        assert type(ai).__name__ == "AzimuthalIntegrator"
 
     def test_distance_conversion(self):
         """z0 in microns should be converted to metres for pyFAI."""

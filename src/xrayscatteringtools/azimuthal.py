@@ -357,8 +357,12 @@ def create_J4m_integrator(x0=0, y0=0, z0=90_000, tx=0, ty=0, keV=10, z_off=0):
         If pyFAI is not installed.
     """
 
-    # Lazy load these 
-    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+    # Lazy load these. AzimuthalIntegrator moved to pyFAI.integrator.azimuthal
+    # in pyFAI 2025.1; older versions only have pyFAI.azimuthalIntegrator.
+    try:
+        from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+    except ImportError:
+        from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
     from pyFAI.detectors import Detector
 
     dist = (z0 + z_off) * 1e-6            # microns → metres
