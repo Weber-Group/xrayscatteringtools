@@ -10,7 +10,8 @@
 - **Visualization** — Plot Jungfrau 4M detector images with proper tiled geometry.
 - **Calibration** — Geometry calibration, interactive pixel masking, per-material scattering corrections, and timetool arrival-time calibration.
 - **Theoretical Modeling** — Compute elastic and inelastic scattering patterns via the Independent Atom Model (IAM), load _ab initio_ scattering data and optimized molecular geometries.
-- **Utilities** — Unit conversions (keV, Å, a.u., _q_, _θ_), momentum-transfer maps, azimuthal binning, molecular transformations, and element lookups.
+- **Azimuthal Integration** — Momentum-transfer maps and azimuthal binning of detector images, either built-in or through [pyFAI](https://pyfai.readthedocs.io/).
+- **Utilities** — Unit conversions (keV, Å, a.u., _q_, _θ_), molecular transformations, and element lookups.
 
 ---
 
@@ -54,32 +55,38 @@ Detector visualization:
 - `plot_jungfrau` — Plot arbitrary Jungfrau panel data with custom coordinates.
 - `compute_pixel_edges` / `edges_from_centers` — Derive pixel-edge arrays for `pcolormesh`.
 
+### `xrayscatteringtools.azimuthal`
+Azimuthal integration of detector images (all distances in microns, angles in degrees, energy in keV):
+- `compute_q_map` — Per-pixel momentum transfer for a given detector geometry.
+- `azimuthalBinning` — Bin an image into _q_ (or _r_) and optional azimuthal sectors, with polarization and solid-angle corrections.
+- `create_J4m_integrator` — Build a pyFAI `AzimuthalIntegrator` from the real Jungfrau 4M pixel layout.
+- `azimuthalBinning_pyfai` — pyFAI-based alternative to `azimuthalBinning` that takes the same geometry parameters. Pass a pre-built integrator (`ai=`) to reuse it across many images.
+
 ### `xrayscatteringtools.utils`
 General-purpose utilities:
 - **Unit conversions** — `keV2Angstroms`, `Angstroms2keV`, `au2invAngstroms`, `invAngstroms2au`, `q2theta`, `theta2q`.
-- **Detector geometry** — `compute_q_map`, `azimuthalBinning`.
 - **Molecular transforms** — `translate_molecule`, `rotate_molecule`.
 - **Element lookups** — `element_symbol_to_number`, `element_number_to_symbol`.
 - **Other** — `compress_ranges`, `expand_ranges`, `enable_underscore_cleanup`, `J4M` (lazy-loaded Jungfrau 4M geometry).
 
 ### `xrayscatteringtools.calib`
 Calibration and correction tools:
-- **`geometry_calibration`** — Fit beam center and detector distance via azimuthally-averaged scattering patterns (`run_geometry_calibration`, `thompson_correction`, `geometry_correction`).
-- **`masking`** — `MaskMaker` class for step-by-step pixel masking: dark, background, polygon, and per-_q_-ring sample masks.
-- **`scattering_corrections`** — Per-material correction factors (Si, Al, Be, Kapton HN, sample cell), attenuation-length lookups, and `J4M_efficiency`.
+- **`geometry_calibration`** — Fit beam center and detector distance to a theory pattern, with an optional flat background (`run_geometry_calibration`, `thompson_correction`, `geometry_correction`).
+- **`masking`** — `MaskMaker` class for step-by-step pixel masking: dark, background, polygon, and per-_q_-ring sample masks. The detector's line and T masks are applied from the start, so known-bad pixels never enter the statistics.
+- **`scattering_corrections`** — Per-material correction factors (Si, Al, Be, Kapton HN, sample cell), attenuation lengths from xraylib, and `J4M_efficiency`.
 - **`timetool_calibration`** — `fast_erf_fit` for edge detection, `apply_timetool_correction` for per-shot arrival-time correction, and `add_calibration_to_yaml` for persisting calibration parameters.
 
 ### `xrayscatteringtools.theory`
 Theoretical scattering models:
-- **`iam`** — Independent Atom Model: isotropic and oriented elastic/inelastic scattering patterns (`iam_elastic_pattern`, `iam_inelastic_pattern`, `iam_total_pattern`, and their `_oriented` variants), plus `iam_compton_spectrum`.
-- **`geometries`** — Lazy-loaded optimized molecular geometries from bundled HDF5 data (accessed as module-level attributes, e.g. `geometries.SF6`).
-- **`patterns`** — Lazy-loaded _ab initio_ scattering patterns from bundled HDF5 data (accessed as module-level attributes, e.g. `patterns.SF6__HF__aug_cc_pVDZ`).
+- **`iam`** — Independent Atom Model: isotropic and oriented elastic/inelastic scattering patterns (`iam_elastic_pattern`, `iam_inelastic_pattern`, `iam_total_pattern`, and their `_oriented` variants), `iam_compton_spectrum`, and `iam_inelastic_pattern_from_formula` (Compton intensity from a chemical formula alone, no coordinates needed).
+- **`geometries`** — Lazy-loaded optimized molecular geometries from bundled HDF5 data (accessed as module-level attributes, e.g. `geometries.SF6__CCSD_T_DHK__aug_cc_pV5Z_DK`).
+- **`patterns`** — Lazy-loaded _ab initio_ scattering patterns from bundled HDF5 data (accessed as module-level attributes named `molecule__method__basis_set`, e.g. `patterns.SF6__HF__aug_cc_pVDZ`). Available: SF6 at the HF, MP2, and CCSD levels (aug-cc-pVDZ), and Ne at the CCSD+X2C level (aug-cc-pVDZ/TZ/QZ+DK). Some patterns carry a `notes` attribute with details of the calculation.
 
 ---
 
 ## Testing
 
-The test suite uses [pytest](https://docs.pytest.org/) and covers all modules (360+ tests):
+The test suite uses [pytest](https://docs.pytest.org/) and covers all modules (460+ tests):
 ```bash
 pip install -e ".[dev]"
 python -m pytest tests/
