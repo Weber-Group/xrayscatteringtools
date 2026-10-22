@@ -267,6 +267,18 @@ class TestJ4M:
     def test_x_y_shapes_match(self):
         assert J4M.x.shape == J4M.y.shape
 
+    def test_line_mask_covers_low_q_corner_strips(self):
+        """The 6-pixel strips at the inner (low-q) corners of the four central panels are masked."""
+        w = 6
+        line = J4M.line_mask.astype(bool)
+        for strip in [
+            line[1, :256, :w], line[1, :w, :256],
+            line[2, -256:, :w], line[2, -w:, :256],
+            line[5, :256, -w:], line[5, :w, -256:],
+            line[6, -256:, -w:], line[6, -w:, -256:],
+        ]:
+            assert not strip.any()
+
     def test_repr_after_load(self):
         # Accessing an attribute forces loading
         _ = J4M.x
