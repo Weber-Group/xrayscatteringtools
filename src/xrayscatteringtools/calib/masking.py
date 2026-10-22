@@ -442,6 +442,7 @@ class MaskMaker:
         phi0: float = 0,
         n_q_bins: int = _N_Q_BINS,
         auto_accept_threshold: float = _AUTO_ACCEPT_THRESHOLD,
+        manual_check: Optional[list[int]] = None,
         plotting: bool = True,
     ) -> None:
         """Create a mask from per-ring intensity statistics on the sample data.
@@ -477,9 +478,13 @@ class MaskMaker:
             Number of q bins for ring-by-ring masking.
         auto_accept_threshold : float, optional
             Fraction of surviving pixels above which a ring is auto-accepted.
+        manual_check : list of int, optional
+            Indices of q bins to always review manually, even if they would
+            be auto-accepted.  Default is None (no forced manual checks).
         plotting : bool, optional
             Show diagnostic plots.
         """
+        manual_check = set(manual_check) if manual_check is not None else set()
         self.sample_mask = np.ones_like(J4M.x, dtype=bool)
 
         # Average sample image with current masks applied
@@ -510,7 +515,7 @@ class MaskMaker:
             ring_mask[valid] = (q_ring[valid] >= lower_bound) & (q_ring[valid] <= upper_bound)
 
             kept_frac = np.sum(ring_mask[ring_sel]) / np.sum(ring_sel)
-            if kept_frac > auto_accept_threshold and q_idx != 0:
+            if (kept_frac > auto_accept_threshold and q_idx != 0) and q_idx not in manual_check:
                 if self.verbose:
                     logger.info(
                         'Q bin %.3f: auto-masked %.2f%%',

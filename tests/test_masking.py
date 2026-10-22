@@ -482,6 +482,30 @@ class TestProcessSample:
             mask_maker.process_sample(n_std=100, plotting=False, n_q_bins=5, auto_accept_threshold=0.0)
         assert mask_maker.sample_mask.shape == _SHAPE
 
+    @pytest.mark.parametrize("manual_check, expected_prompts", [
+        (None, 2),     # only q_idx 0 is reviewed (lower + upper bound)
+        ([2], 4),      # q_idx 0 and the forced q_idx 2
+        ([0, 3], 4),   # q_idx 0 is already reviewed, so only q_idx 3 adds prompts
+    ])
+    def test_manual_check_forces_review(self, mask_maker, fake_j4m, manual_check, expected_prompts):
+        mock_fig = MagicMock()
+        mock_axes = (MagicMock(), MagicMock())
+        mock_input = MagicMock(side_effect=["-1e30", "1e30"] * 10)
+        with (
+            patch.object(masking_mod, "J4M", fake_j4m),
+            patch("matplotlib.pyplot.show"),
+            patch("matplotlib.pyplot.subplots", return_value=(mock_fig, mock_axes)),
+            patch.object(masking_mod, "plot_j4m", return_value=MagicMock()),
+            patch.object(masking_mod, "compute_q_map", return_value=np.random.default_rng(7).random(_SHAPE)),
+            patch.object(masking_mod, "thompson_correction", return_value=np.ones(_SHAPE)),
+            patch("builtins.input", mock_input),
+        ):
+            mask_maker.process_sample(
+                n_std=100, plotting=False, n_q_bins=5,
+                auto_accept_threshold=0.0, manual_check=manual_check,
+            )
+        assert mock_input.call_count == expected_prompts
+
 
 # ===================================================================
 # diagnose_q_bins (smoke test)
