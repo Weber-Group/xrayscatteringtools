@@ -80,13 +80,13 @@ Calibration and correction tools:
 Theoretical scattering models:
 - **`iam`** — Independent Atom Model: isotropic and oriented elastic/inelastic scattering patterns (`iam_elastic_pattern`, `iam_inelastic_pattern`, `iam_total_pattern`, and their `_oriented` variants), `iam_compton_spectrum`, and `iam_inelastic_pattern_from_formula` (Compton intensity from a chemical formula alone, no coordinates needed).
 - **`geometries`** — Lazy-loaded optimized molecular geometries from bundled HDF5 data (accessed as module-level attributes, e.g. `geometries.SF6__CCSD_T_DHK__aug_cc_pV5Z_DK`).
-- **`patterns`** — Lazy-loaded _ab initio_ scattering patterns from bundled HDF5 data (accessed as module-level attributes named `molecule__method__basis_set`, e.g. `patterns.SF6__HF__aug_cc_pVDZ`). Available: SF6 at the HF, MP2, and CCSD levels (aug-cc-pVDZ), and Ne at the CCSD+X2C level (aug-cc-pVDZ/TZ/QZ+DK). Some patterns carry a `notes` attribute with details of the calculation.
+- **`patterns`** — Lazy-loaded _ab initio_ scattering patterns from bundled HDF5 data (accessed as module-level attributes named `molecule__method__basis_set`, e.g. `patterns.SF6__HF__aug_cc_pVDZ`). Available: SF6 at the HF, MP2, and CCSD levels (aug-cc-pVDZ), HF (cc-pVTZ), and frozen-core CCSD (aug-cc-pVDZ/TZ); Ne at the CCSD+X2C level (aug-cc-pVDZ/TZ/QZ+DK); and norbornadiene (`NBD`) and quadricyclane (`QC`) at HF (cc-pVTZ) and frozen-core CCSD (aug-cc-pVDZ). Every pattern has the total `I_q`; many also carry `I_q_elastic`/`I_q_inelastic`, and the newer ones add the `I_q_hartree`/`I_q_exchange`/`I_q_cumulant` decomposition. Some patterns carry a `notes` attribute with details of the calculation.
 
 ---
 
 ## Testing
 
-The test suite uses [pytest](https://docs.pytest.org/) and covers all modules (460+ tests):
+The test suite uses [pytest](https://docs.pytest.org/) and covers all modules (580+ tests):
 ```bash
 pip install -e ".[dev]"
 python -m pytest tests/
