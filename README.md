@@ -110,4 +110,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Acknowledgments
 
-This library was created by [David J. Romano](https://david.lizaanddavid.com) by compiling and standardizing code from previous data analysis pipelines. Maintained by the [Weber Research Group](https://sites.brown.edu/weber-lab/) and developed by collaborators to facilitate X-ray scattering research.
+This library was created by [David J. Romano](https://davidromano.dev) by compiling and standardizing code from previous data analysis pipelines. Maintained by the [Weber Research Group](https://sites.brown.edu/weber-lab/) and developed by collaborators to facilitate X-ray scattering research.
