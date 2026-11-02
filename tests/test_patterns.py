@@ -83,6 +83,13 @@ class TestDir:
         assert "SF6__CCSD__aug_cc_pVDZ" in result
 
 
+class TestTheoryExports:
+    @pytest.mark.parametrize("name", PATTERNS_ALL)
+    def test_pattern_exported_from_theory(self, name):
+        from xrayscatteringtools import theory
+        assert hasattr(theory, name), f"add {name} to theory/__init__.py"
+
+
 # ── _make_default_obj ──────────────────────────────────────────────────
 
 
@@ -137,6 +144,20 @@ class TestMakeDefaultObj:
         assert hasattr(obj, "I_q")
         assert not hasattr(obj, "I_q_elastic")
         assert not hasattr(obj, "I_q_inelastic")
+        assert not hasattr(obj, "I_q_hartree")
+        assert not hasattr(obj, "source")
+
+    def test_loads_decomposition_and_source(self, h5_with_elastic):
+        with h5py.File(h5_with_elastic, "a") as f:
+            f.create_dataset("I_q_hartree", data=np.ones(50) * 7)
+            f.create_dataset("I_q_exchange", data=np.ones(50) * -7)
+            f.attrs["source"] = "PySCF RHF via thistle"
+        with h5py.File(h5_with_elastic, "r") as f:
+            obj = _make_default_obj(f)
+        np.testing.assert_allclose(obj.I_q_hartree, 7)
+        np.testing.assert_allclose(obj.I_q_exchange, -7)
+        assert not hasattr(obj, "I_q_cumulant")
+        assert obj.source == "PySCF RHF via thistle"
 
 
 # ── _make_default_docstring ────────────────────────────────────────────
@@ -191,6 +212,26 @@ class TestMakeDefaultDocstring:
         # Should contain the a.u. conversion factor
         assert str(au2invAngstroms(1.0)) in doc
 
+    def test_docstring_source(self):
+        obj = SimpleNamespace(
+            q=np.linspace(0.5, 8.0, 30),
+            I_q=np.ones(30),
+            molecule="NBD",
+            method="HF",
+            basis_set="cc_pVTZ",
+            n_electrons=50,
+        )
+        assert "Molpro" in _make_default_docstring(obj)
+        obj.source = "PySCF RHF via thistle"
+        obj.I_q_hartree = np.ones(30)
+        obj.I_q_exchange = np.ones(30)
+        doc = _make_default_docstring(obj)
+        assert "PySCF RHF via thistle" in doc
+        assert "Molpro" not in doc
+        assert "I_q_hartree" in doc
+        assert "I_q_exchange" in doc
+        assert "I_q_cumulant" not in doc.split("Notes")[0]
+
 
 # ── Consistency between shipped patterns ───────────────────────────────
 
@@ -208,6 +249,25 @@ class TestShippedPatternConsistency:
             rtol=1e-10,
             err_msg=f"elastic + inelastic != total for {name}",
         )
+
+    @pytest.mark.parametrize("name", PATTERNS_ALL)
+    def test_two_electron_decomposition_equals_total(self, name):
+        obj = getattr(patterns, name)
+        if not hasattr(obj, "I_q_hartree"):
+            pytest.skip(f"{name} does not have the hartree/exchange/cumulant decomposition")
+        cumulant = getattr(obj, "I_q_cumulant", 0)
+        np.testing.assert_allclose(
+            obj.I_q, obj.n_electrons + obj.I_q_hartree + obj.I_q_exchange + cumulant,
+            rtol=1e-9,
+            err_msg=f"n_electrons + hartree + exchange + cumulant != total for {name}",
+        )
+
+    @pytest.mark.parametrize("name", PATTERNS_ALL)
+    def test_forward_scattering_is_n_electrons_squared(self, name):
+        obj = getattr(patterns, name)
+        if obj.q[0] > 1e-6:
+            pytest.skip(f"{name} does not start at q = 0")
+        np.testing.assert_allclose(obj.I_q[0], obj.n_electrons**2, rtol=1e-6)
 
     @pytest.mark.parametrize("name", PATTERNS_ALL)
     def test_n_electrons_positive(self, name):

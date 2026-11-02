@@ -5,3 +5,6 @@ from .iam import iam_compton_spectrum, iam_inelastic_pattern_from_formula
 from .geometries import SF6__CCSD_T_DHK__aug_cc_pV5Z_DK
 
 from .patterns import SF6__CCSD__aug_cc_pVDZ, SF6__MP2__aug_cc_pVDZ, SF6__HF__aug_cc_pVDZ
+from .patterns import SF6__HF__cc_pVTZ, SF6__CCSD_FC__aug_cc_pVDZ, SF6__CCSD_FC__aug_cc_pVTZ
+from .patterns import Ne__CCSD_X2C__aug_cc_pVDZ_DK, Ne__CCSD_X2C__aug_cc_pVTZ_DK, Ne__CCSD_X2C__aug_cc_pVQZ_DK
+from .patterns import NBD__HF__cc_pVTZ, NBD__CCSD_FC__aug_cc_pVDZ, QC__HF__cc_pVTZ, QC__CCSD_FC__aug_cc_pVDZ
