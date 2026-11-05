@@ -155,7 +155,10 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         if isinstance(archPVs, str):
             archPVs = [archPVs]
         archive = EpicsArchive()
-        unixTime = data_combined['unixTime']
+        for i, data in enumerate(data_array):
+            if 'unixTime' not in data:
+                raise KeyError(f"'unixTime' not found in run {runNumbers[i]}; it is required for archPVs.")
+        unixTime = np.concatenate([np.squeeze(d['unixTime']) for d in data_array])
         for pv in tqdm(archPVs, desc="Loading EPICS PVs"):
             pv_chunks = []
             for i, runNumber in enumerate(runNumbers):

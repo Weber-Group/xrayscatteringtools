@@ -511,6 +511,9 @@ class MaskMaker:
         q_map = compute_q_map(J4M.x, J4M.y, x0, y0, z0, tx, ty, keV, z_off)
         q_bins = np.linspace(np.nanmin(q_map[~np.isnan(sample_avg_masked)]), np.nanmax(q_map[~np.isnan(sample_avg_masked)]), n_q_bins)
 
+        # Per-ring histograms and chosen bounds, for the waterfall summary plot
+        ring_records = []
+
         for q_idx, q_lo in tqdm(enumerate(q_bins[:-1]), total=len(q_bins) - 1):
             q_hi = q_bins[q_idx + 1]
             ring_sel = (q_map >= q_lo) & (q_map < q_hi)
@@ -534,6 +537,7 @@ class MaskMaker:
                         100 * (1 - kept_frac),
                     )
                 self.sample_mask &= ring_mask
+                chosen_lb, chosen_ub, is_manual = lower_bound, upper_bound, False
             else:
                 # Manual review required — show histogram and detector ring
                 ring_data = q_ring[ring_sel].flatten()
@@ -555,6 +559,7 @@ class MaskMaker:
                 ax_hist.set_xlabel('Intensity')
                 ax_hist.set_ylabel('Counts')
                 ax_hist.grid(True)
+                ax_hist.minorticks_on()
 
                 # Right: pcolormesh of the ring pixels on the detector
                 ring_display = np.where(ring_sel, sample_avg_corrected, np.nan)
@@ -587,10 +592,38 @@ class MaskMaker:
                 manual_mask = np.ones_like(q_ring, dtype=bool)
                 manual_mask[valid] = (q_ring[valid] >= user_lb) & (q_ring[valid] <= user_ub)
                 self.sample_mask &= manual_mask
+                chosen_lb, chosen_ub, is_manual = user_lb, user_ub, True
+
+            if plotting:
+                ring_vals = q_ring[ring_sel]
+                ring_vals = ring_vals[np.isfinite(ring_vals)]
+                if ring_vals.size > 0:
+                    # Normalise by the ring median so weak high-q rings are as
+                    # readable as the bright low-q ones on a shared axis
+                    median = np.median(ring_vals)
+                    scale = median if median > 0 else 1.0
+                    ring_vals = ring_vals / scale
+                    lb_n, ub_n = chosen_lb / scale, chosen_ub / scale
+                    p01, p05, p995, p999 = np.percentile(ring_vals, [0.1, 0.5, 99.5, 99.9])
+                    # Widen the range out to the bounds so the cut region is
+                    # visible, but stop at the 0.1/99.9 percentiles so a few
+                    # hot pixels (or a very loose manual bound) don't stretch the axis
+                    counts, edges = np.histogram(
+                        ring_vals,
+                        bins=200,
+                        range=(min(p05, max(lb_n, p01)), max(p995, min(ub_n, p999))),
+                    )
+                    cut_frac = np.mean((ring_vals < lb_n) | (ring_vals > ub_n))
+                    ring_records.append(
+                        dict(q_lo=q_lo, q_hi=q_hi, counts=counts, edges=edges,
+                             lb=lb_n, ub=ub_n, manual=is_manual, cut_frac=cut_frac)
+                    )
 
         self.sample_mask = self.sample_mask.astype(bool)
 
         if plotting:
+            self._plot_q_ring_waterfall(ring_records, n_std)
+
             sample_avg_all_masked = np.where(self.sample_mask, sample_avg_masked, np.nan)
 
             fig, axes = plt.subplots(1, 3, figsize=(18, 8))
@@ -601,6 +634,73 @@ class MaskMaker:
             plt.show()
 
         print(f'Masked percentage from sample: {100 * self._masked_fraction(self.sample_mask):.2f}%')
+
+    def _plot_q_ring_waterfall(self, ring_records: list[dict], n_std: float) -> None:
+        """Waterfall of per-ring intensity histograms with the mask bounds shaded.
+
+        Intensities are divided by each ring's median, and each histogram is
+        normalised to unit peak height and offset vertically by its ring index.
+        The intensity range that survives the mask is shaded in steel-blue for
+        auto-accepted rings and red for rings whose bounds were entered
+        manually; the range that is cut is shaded grey.  The percentage of
+        ring pixels cut is printed to the right of each row.
+        """
+        if not ring_records:
+            return
+
+        n_rings = len(ring_records)
+        spacing = 0.5
+        colors = {False: 'steelblue', True: 'tab:red'}
+        cut_color = 'tab:gray'
+
+        fig, ax = plt.subplots(figsize=(18, max(8, 0.12 * n_rings)))
+        for i, rec in enumerate(ring_records):
+            offset = i * spacing
+            centers = 0.5 * (rec['edges'][:-1] + rec['edges'][1:])
+            peak = rec['counts'].max()
+            height = rec['counts'] / peak if peak > 0 else rec['counts'].astype(float)
+            kept = (centers >= rec['lb']) & (centers <= rec['ub'])
+            # Lower rings are drawn in front so their peaks occlude the rows above
+            base_z = 4 * (n_rings - i)
+            ax.fill_between(centers, offset, offset + height, color='white', zorder=base_z)
+            ax.fill_between(
+                centers, offset, offset + height, where=kept,
+                color=colors[rec['manual']], alpha=0.6, linewidth=0, zorder=base_z + 1,
+            )
+            # Cut tails are usually near-zero counts, so shade at least the full
+            # row height there to keep them visible
+            ax.fill_between(
+                centers, offset, offset + np.maximum(height, spacing), where=~kept,
+                color=cut_color, alpha=0.5, linewidth=0, zorder=base_z + 2,
+            )
+            ax.plot(centers, offset + height, color='k', lw=0.6, zorder=base_z + 3)
+            ax.text(
+                1.005, offset, f"{100 * rec['cut_frac']:.1f}%",
+                transform=ax.get_yaxis_transform(), fontsize=6, va='bottom',
+                color=colors[rec['manual']],
+            )
+        ax.text(1.005, 1.0, '% cut', transform=ax.transAxes, fontsize=8, va='bottom')
+
+        # Label a subset of rows with their q-centre
+        tick_step = max(1, n_rings // 15)
+        tick_idx = np.arange(0, n_rings, tick_step)
+        ax.set_yticks(tick_idx * spacing)
+        ax.set_yticklabels(
+            [f"{0.5 * (ring_records[i]['q_lo'] + ring_records[i]['q_hi']):.3f}" for i in tick_idx]
+        )
+        ax.set_ylim(-spacing, (n_rings - 1) * spacing + 1.5)
+        ax.set_xlabel('Intensity / ring median (Thompson-corrected)')
+        ax.set_ylabel(r'$q\;(\AA^{-1})$')
+        ax.set_title(f'Run {self.sample_run_number} Q-ring Histograms  (n_std={n_std})')
+        legend_elements = [
+            Patch(facecolor='steelblue', alpha=0.6, edgecolor='k', label='Auto bounds (kept)'),
+            Patch(facecolor='tab:red', alpha=0.6, edgecolor='k', label='Manual bounds (kept)'),
+            Patch(facecolor=cut_color, alpha=0.5, edgecolor='k', label='Cut by mask'),
+        ]
+        ax.legend(handles=legend_elements, loc='lower left', bbox_to_anchor=(0, 1.0), ncol=3, frameon=False)
+        ax.grid(True, axis='x', alpha=0.3)
+        plt.tight_layout()
+        plt.show()
 
     def diagnose_q_bins(
         self,
