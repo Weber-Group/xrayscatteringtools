@@ -43,6 +43,8 @@ pip install -e ".[dev]"
 ### `xrayscatteringtools.io`
 Data input and output:
 - `combineRuns` — Combine data from multiple LCLS experimental runs (HDF5).
+- `prefetch_files` — Bring cold run files back from Weka object storage to SSD (S3DF).
+- `tier_status` — Report how much of each file is on Weka's SSD tier.
 - `read_xyz` / `write_xyz` — Read and write `.xyz` molecular geometry files.
 - `read_mol` — Parse `.mol` / `.molden` files.
 - `get_leaves` — Inspect the dataset tree of an HDF5 file.

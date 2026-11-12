@@ -1,5 +1,8 @@
 import glob
 import os
+import shutil
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import h5py
 from .epicsArch import EpicsArchive
@@ -8,7 +11,133 @@ import yaml
 from .utils import element_number_to_symbol
 from numbers import Number
 
-def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archPVs=None):
+_WEKA_UNITS = {'B': 1, 'KB': 1e3, 'MB': 1e6, 'GB': 1e9, 'TB': 1e12, 'PB': 1e15}
+
+
+def tier_status(paths):
+    """
+    Report how much of each file is on the fast SSD tier of a Weka filesystem (e.g. /sdf/data on SLAC S3DF).
+
+    Files that have not been read for a while are kept only in Weka's object-storage tier and read at
+    roughly 40-50 MB/s per file on first access. Use :func:`prefetch_files` to bring them back to SSD.
+
+    Parameters
+    ----------
+    paths : str or list of str
+        File path(s) to query.
+
+    Returns
+    -------
+    status : dict or None
+        ``{path: (size_bytes, ssd_bytes)}`` for every path Weka reported on, or None if the ``weka``
+        command is not available (not on a Weka filesystem client).
+    """
+    if isinstance(paths, (str, bytes, os.PathLike)):
+        paths = [paths]
+    paths = [os.fspath(p) for p in paths]
+    if shutil.which('weka') is None or len(paths) == 0:
+        return None
+    status = {}
+    for i in range(0, len(paths), 256):  # keep the command line short
+        try:
+            out = subprocess.run(['weka', 'fs', 'tier', 'location', *paths[i:i + 256]],
+                                 capture_output=True, text=True).stdout
+        except OSError:
+            return None
+        for line in out.splitlines()[1:]:
+            tok = line.split()
+            # PATH (may contain spaces) | FILE TYPE | FILE SIZE | SSD (WRITE) | SSD (READ) | OBJECT | REMOTE
+            if len(tok) < 12:
+                continue
+            try:
+                size = float(tok[-10]) * _WEKA_UNITS[tok[-9]]
+                ssd = float(tok[-8]) * _WEKA_UNITS[tok[-7]] + float(tok[-6]) * _WEKA_UNITS[tok[-5]]
+            except (ValueError, KeyError):
+                continue
+            status[' '.join(tok[:-11])] = (size, min(ssd, size))
+    return status
+
+
+def prefetch_files(paths, n_parallel=8, wait=False, verbose=False):
+    """
+    Ask a Weka filesystem (e.g. /sdf/data on SLAC S3DF) to copy files from its object-storage tier back to SSD.
+
+    Cold files read at roughly 40-50 MB/s per file; fetching several at once in the background makes
+    subsequent reads fast. Files are fetched in the order given, ``n_parallel`` at a time. Files that are
+    already on SSD return almost immediately. Does nothing if the ``weka`` command is not available.
+
+    Equivalent shell command::
+
+        ls *.h5 | xargs -n1 -P8 weka fs tier fetch -v
+
+    Parameters
+    ----------
+    paths : str or list of str
+        File path(s) to fetch.
+    n_parallel : int, optional
+        Number of files fetched at the same time (default: 8).
+    wait : bool, optional
+        If True, block until every fetch has finished. If False (default), the fetches run in background
+        threads and this function returns immediately.
+    verbose : bool, optional
+        If True, print a line when the fetches start and a warning for any fetch that fails.
+
+    Returns
+    -------
+    futures : list of concurrent.futures.Future or None
+        One future per file (result: the ``weka`` return code), or None if ``weka`` is not available.
+    """
+    if isinstance(paths, (str, bytes, os.PathLike)):
+        paths = [paths]
+    paths = [os.fspath(p) for p in paths]
+    if shutil.which('weka') is None or len(paths) == 0:
+        return None
+
+    def _fetch(path):
+        try:
+            res = subprocess.run(['weka', 'fs', 'tier', 'fetch', path], capture_output=True, text=True)
+        except OSError as e:
+            if verbose:
+                print(f"weka fs tier fetch failed for {path}: {e}")
+            return -1
+        if res.returncode != 0 and verbose:
+            print(f"weka fs tier fetch failed for {path}: {res.stderr.strip()}")
+        return res.returncode
+
+    if verbose:
+        print(f"Prefetching {len(paths)} file(s) to SSD, {n_parallel} at a time")
+    executor = ThreadPoolExecutor(max_workers=max(1, int(n_parallel)))
+    futures = [executor.submit(_fetch, p) for p in paths]
+    executor.shutdown(wait=wait)  # with wait=False the queued fetches keep running in the background
+    return futures
+
+
+def _fmt_bytes(n):
+    """Format a byte count with decimal units, matching what ``weka`` reports."""
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if n < 1000 or unit == 'TB':
+            return f"{n:.0f} {unit}" if unit == 'B' else f"{n:.2f} {unit}"
+        n /= 1000
+
+
+def _prefetch_state(future, path):
+    """One-line description of where a single file's prefetch stands (used by combineRuns(verbose=True))."""
+    if future.cancelled():
+        return "prefetch: cancelled"
+    if future.done():
+        if future.exception() is not None:
+            return f"prefetch: failed ({future.exception()})"
+        rc = future.result()
+        return "prefetch: done, file is on SSD" if rc == 0 else f"prefetch: failed (weka exit code {rc}), reading from object storage"
+    st = (tier_status(path) or {}).get(os.fspath(path))
+    if st and st[1] >= st[0]:
+        return "prefetch: file is already on SSD"
+    on_ssd = f", {_fmt_bytes(st[1])} of {_fmt_bytes(st[0])} on SSD so far" if st else ""
+    return f"prefetch: {'in progress' if future.running() else 'still queued'}{on_ssd}"
+
+
+def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check, verbose=False, archPVs=None,
+                prefetch=True, prefetch_parallel=8):
     """
     Combine data from multiple experimental runs into a single consolidated dataset.
 
@@ -33,12 +162,22 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
         Keys for which consistency across runs should be verified. If any discrepancies
         are found, a warning is printed.
     verbose : bool, optional
-        If True, prints detailed information during data loading (default: False).
+        If True, prints detailed information during data loading (default: False): the keys in each
+        file, how much of the run files was already on SSD before prefetching, and the prefetch status
+        of each file as it is loaded.
     archPVs : str or list of str, optional
         EPICS PV name(s) to fetch from the EPICS archive and interpolate onto the
         run timestamps. Each PV is stored in `data_combined` using the PV name as
         the key. For this to work, the 'unixTime' key must be present in each run's data.
         Note: this will only work on machines with access to the EPICS archive. (default: None).
+    prefetch : bool, optional
+        If True (default), first ask the Weka filesystem to bring every run file from its object-storage
+        tier back to SSD, in the background and in load order (see :func:`prefetch_files`). This makes runs
+        that have not been read for a while load many times faster. A one-line notice is printed when the
+        prefetch starts. Silently skipped when the ``weka`` command is not available (e.g. off the cluster).
+        Fetches still queued when loading finishes (or fails) are cancelled.
+    prefetch_parallel : int, optional
+        Number of files prefetched at the same time (default: 8).
 
     Returns
     -------
@@ -100,32 +239,63 @@ def combineRuns(runNumbers, folders, keys_to_combine, keys_to_sum, keys_to_check
     if archPVs is not None:
         needed_keys.add('unixTime')  # Needed for EPICS PV interpolation
 
-    data_array = []
-    for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
-        data = {}
+    # Resolve every run's file up front (so a missing run fails before anything is loaded)
+    filenames = []
+    for i, runNumber in enumerate(runNumbers):
         run_suffix = f'_Run{runNumToString(runNumber)}.h5'
         matches = sorted(glob.glob(os.path.join(folders[i], f'*{run_suffix}')))
         if len(matches) == 0:
             raise FileNotFoundError(f"No files found in {folders[i]} matching pattern '*{run_suffix}'")
         elif len(matches) > 1:
             raise FileExistsError(f"Multiple files found in {folders[i]} matching pattern '*{run_suffix}': {matches}")
-        filename = matches[0]
-        print('Loading: ' + filename)
-        with h5py.File(filename, 'r') as f:
-            # Print all keys and shapes without loading data
+        filenames.append(matches[0])
+
+    # Bring cold files back from the object-storage tier while the first ones are being read
+    prefetch_futures = None
+    if prefetch:
+        before = tier_status(filenames) if verbose else None  # snapshot before fetching starts
+        prefetch_futures = prefetch_files(filenames, n_parallel=prefetch_parallel, wait=False)
+        if prefetch_futures is None:
             if verbose:
-                def _print_leaf(name):
-                    item = f[name]
-                    if isinstance(item, h5py.Dataset):
-                        print(f"  {name}  {item.shape}  {item.dtype}")
-                f.visit(_print_leaf)
-            # Only load the keys we need
-            for key in needed_keys:
-                if key in f:
-                    data[key] = f[key][()]
-                    if verbose: 
-                        print(f"  [loaded] {key}")
-            data_array.append(data)
+                print("Prefetch skipped: 'weka' command not available (not on a Weka filesystem client)")
+        else:
+            print(f"Prefetching {len(filenames)} run file(s) to SSD in the background "
+                  f"({max(1, int(prefetch_parallel))} at a time)")
+            if verbose and before:
+                total = sum(s[0] for s in before.values())
+                ssd = sum(s[1] for s in before.values())
+                n_hot = sum(s[1] >= s[0] for s in before.values())
+                print(f"  Already on SSD: {_fmt_bytes(ssd)} of {_fmt_bytes(total)} "
+                      f"({n_hot}/{len(filenames)} files fully on SSD)")
+
+    data_array = []
+    try:
+        for i, runNumber in enumerate(tqdm(runNumbers, desc="Loading Runs")):
+            data = {}
+            filename = filenames[i]
+            print('Loading: ' + filename)
+            if verbose and prefetch_futures is not None:
+                print('  ' + _prefetch_state(prefetch_futures[i], filename))
+            with h5py.File(filename, 'r') as f:
+                # Print all keys and shapes without loading data
+                if verbose:
+                    def _print_leaf(name):
+                        item = f[name]
+                        if isinstance(item, h5py.Dataset):
+                            print(f"  {name}  {item.shape}  {item.dtype}")
+                    f.visit(_print_leaf)
+                # Only load the keys we need
+                for key in needed_keys:
+                    if key in f:
+                        data[key] = f[key][()]
+                        if verbose:
+                            print(f"  [loaded] {key}")
+                data_array.append(data)
+    finally:
+        # Don't keep fetching files nobody is going to read (e.g. after an error or Ctrl-C)
+        if prefetch_futures is not None:
+            for fut in prefetch_futures:
+                fut.cancel()
 
     data_combined = {}
     for key in tqdm(keys_to_combine, desc="Combining Data"):
